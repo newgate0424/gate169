@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
                     pageId: { in: pageIds }
                 },
                 createdAt: { gt: since },
-                isFromPage: false // Only messages from users, not from page
+                // isFromPage: false // Removed to allow syncing messages from page (e.g. sent from Meta Business Suite)
             },
             include: {
                 conversation: true
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
             }
         });
 
-        return new Response(JSON.stringify({ 
+        return new Response(JSON.stringify({
             messages: newMessages,
             unreadConversations,
             timestamp: new Date().toISOString()

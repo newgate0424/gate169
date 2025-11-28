@@ -62,7 +62,7 @@ export default function AssetsPage() {
     // Notification State
     const [notificationsEnabled, setNotificationsEnabled] = useState(true);
     const [soundEnabled, setSoundEnabled] = useState(true);
-    const [lastCheckTime, setLastCheckTime] = useState<string>(new Date().toISOString());
+    const lastCheckTimeRef = useRef<string>(new Date().toISOString());
     const [unreadCount, setUnreadCount] = useState(0);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -77,12 +77,12 @@ export default function AssetsPage() {
     useEffect(() => {
         audioRef.current = new Audio(NOTIFICATION_SOUND_URL);
         audioRef.current.volume = 0.5;
-        
+
         // Request notification permission on mount
         if ('Notification' in window && Notification.permission === 'default') {
             Notification.requestPermission();
         }
-        
+
         return () => {
             if (audioRef.current) {
                 audioRef.current.pause();
@@ -107,12 +107,12 @@ export default function AssetsPage() {
                 icon: '/favicon.ico',
                 tag: 'new-message',
             });
-            
+
             notification.onclick = () => {
                 window.focus();
                 notification.close();
             };
-            
+
             // Auto close after 5 seconds
             setTimeout(() => notification.close(), 5000);
         }
@@ -125,39 +125,39 @@ export default function AssetsPage() {
         const pollForMessages = async () => {
             try {
                 const response = await fetch(
-                    `/api/messages/stream?pageIds=${selectedPageIds.join(',')}&lastCheck=${lastCheckTime}`
+                    `/api/messages/stream?pageIds=${selectedPageIds.join(',')}&lastCheck=${lastCheckTimeRef.current}`
                 );
-                
+
                 if (response.ok) {
                     const data = await response.json();
-                    
+
                     if (data.messages && data.messages.length > 0) {
                         // New messages received!
                         console.log('📩 New messages:', data.messages.length);
                         playNotificationSound();
-                        
+
                         const latestMessage = data.messages[0];
                         showNotification(
                             '💬 ข้อความใหม่',
                             `${latestMessage.senderName || 'ลูกค้า'}: ${latestMessage.content?.substring(0, 50) || 'ส่งข้อความ'}`
                         );
-                        
+
                         // Refresh conversations list
                         loadConversations(selectedPageIds);
-                        
+
                         // If viewing the conversation that received new message, refresh messages
                         if (selectedConversation && data.messages.some((m: any) => m.conversationId === selectedConversation.id)) {
                             loadMessages(selectedConversation.id, selectedConversation.pageId);
                         }
                     }
-                    
+
                     // Update unread count
                     if (data.unreadConversations) {
                         const totalUnread = data.unreadConversations.reduce((sum: number, c: any) => sum + c.unreadCount, 0);
                         setUnreadCount(totalUnread);
                     }
-                    
-                    setLastCheckTime(data.timestamp || new Date().toISOString());
+
+                    lastCheckTimeRef.current = data.timestamp || new Date().toISOString();
                 }
             } catch (error) {
                 console.error('Polling error:', error);
@@ -171,7 +171,7 @@ export default function AssetsPage() {
         const pollInterval = setInterval(pollForMessages, 2000);
 
         return () => clearInterval(pollInterval);
-    }, [selectedPageIds, lastCheckTime, selectedConversation, playNotificationSound, showNotification]);
+    }, [selectedPageIds, selectedConversation, playNotificationSound, showNotification]);
 
     useEffect(() => {
         if (facebookToken) {

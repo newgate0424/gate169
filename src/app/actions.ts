@@ -329,22 +329,35 @@ export async function fetchConversationsFromDB(pageIds: string[]) {
         });
 
         // Map to match Facebook API structure roughly
-        return conversations.map(c => ({
-            id: c.id,
-            pageId: c.pageId,
-            updated_time: c.updatedAt.toISOString(),
-            snippet: c.snippet,
-            unread_count: c.unreadCount,
-            participants: {
-                data: [{ name: 'User', id: c.id }] // Placeholder as we don't store names yet
+        return conversations.map(c => {
+            // Try to find a name and ID from the latest message
+            let participantName = 'Customer';
+            let participantId = c.id; // Fallback to conversation ID
+
+            if (c.messages.length > 0) {
+                const msg = c.messages[0];
+                if (!msg.isFromPage && msg.senderName) {
+                    participantName = msg.senderName;
+                    participantId = msg.senderId; // Use the actual sender ID (PSID)
+                }
             }
-        }));
+
+            return {
+                id: c.id,
+                pageId: c.pageId,
+                updated_time: c.updatedAt.toISOString(),
+                snippet: c.snippet,
+                unread_count: c.unreadCount,
+                participants: {
+                    data: [{ name: participantName, id: participantId }]
+                }
+            };
+        });
     } catch (error) {
         console.error("Error fetching conversations from DB:", error);
         return [];
     }
 }
-
 export async function fetchMessagesFromDB(conversationId: string) {
     const session = await getServerSession(authOptions);
     if (!session || !session.user) {
