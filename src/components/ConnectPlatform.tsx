@@ -63,7 +63,10 @@ export function ConnectPlatform({ onLogin, user }: ConnectPlatformProps) {
                     console.log('User cancelled login or did not fully authorize.');
                 }
             },
-            { scope: 'ads_read,read_insights,ads_management,pages_show_list,pages_read_engagement,pages_manage_metadata,pages_messaging' }
+            {
+                scope: 'ads_read,read_insights,ads_management,pages_show_list,pages_read_engagement,pages_manage_metadata,pages_messaging',
+                auth_type: 'rerequest'
+            }
         );
     };
 

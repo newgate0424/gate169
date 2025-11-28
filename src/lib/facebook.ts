@@ -203,10 +203,23 @@ export const getPages = async (accessToken: string) => {
         // Common tasks: 'ANALYZE', 'ADVERTISE', 'MODERATE', 'CREATE_CONTENT', 'MANAGE'
         const relevantTasks = ['ADVERTISE', 'MODERATE', 'CREATE_CONTENT', 'MANAGE'];
 
+        console.log(`Fetched ${me.data.length} pages from API`);
+
+        // Log the first few pages to see their tasks for debugging
+        if (me.data.length > 0) {
+            console.log("Sample page tasks:", JSON.stringify(me.data.slice(0, 3).map((p: any) => ({ name: p.name, tasks: p.tasks })), null, 2));
+        }
+
+        // TEMPORARILY DISABLED FILTERING to debug missing pages
+        /*
         const filteredPages = me.data.filter((page: any) => {
             if (!page.tasks) return false;
             return page.tasks.some((task: string) => relevantTasks.includes(task));
         });
+        */
+        const filteredPages = me.data;
+
+        return filteredPages;
 
         console.log(`Filtered pages from ${me.data.length} to ${filteredPages.length}`);
         return filteredPages;

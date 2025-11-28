@@ -55,9 +55,26 @@ export async function updateAdStatusAction(accessToken: string, adId: string, st
     }
 }
 
-export async function fetchPages(accessToken: string) {
+export async function fetchPages() {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+        throw new Error("Not authenticated");
+    }
+
+    // @ts-ignore
+    const userId = session.user.id;
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { facebookAccessToken: true }
+    });
+
+    const accessToken = user?.facebookAccessToken;
+    if (!accessToken) {
+        throw new Error("No Facebook access token found");
+    }
+
     try {
-        console.log("Fetching pages with token:", accessToken.substring(0, 10) + "...");
+        console.log("Fetching pages with fresh token from DB...");
         const pages = await getPages(accessToken);
         console.log("Fetched pages:", pages.length);
         return JSON.parse(JSON.stringify(pages));
@@ -67,7 +84,24 @@ export async function fetchPages(accessToken: string) {
     }
 }
 
-export async function fetchConversations(accessToken: string, pages: { id: string, access_token?: string }[]) {
+export async function fetchConversations(pages: { id: string, access_token?: string }[]) {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+        throw new Error("Not authenticated");
+    }
+
+    // @ts-ignore
+    const userId = session.user.id;
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { facebookAccessToken: true }
+    });
+
+    const accessToken = user?.facebookAccessToken;
+    if (!accessToken) {
+        throw new Error("No Facebook access token found");
+    }
+
     try {
         console.log(`Fetching conversations for ${pages.length} pages`);
 
@@ -87,6 +121,30 @@ export async function fetchConversations(accessToken: string, pages: { id: strin
                     try {
                         // Pass the token if available to save an API call
                         const convs = await getPageConversations(accessToken, page.id, page.access_token);
+
+                        // Save to DB
+                        for (const conv of convs) {
+                            try {
+                                await prisma.conversation.upsert({
+                                    where: { id: conv.id },
+                                    update: {
+                                        updatedAt: new Date(conv.updated_time),
+                                        snippet: conv.snippet,
+                                        unreadCount: conv.unread_count || 0
+                                    },
+                                    create: {
+                                        id: conv.id,
+                                        pageId: page.id,
+                                        updatedAt: new Date(conv.updated_time),
+                                        snippet: conv.snippet,
+                                        unreadCount: conv.unread_count || 0
+                                    }
+                                });
+                            } catch (dbErr) {
+                                console.error(`Failed to save conversation ${conv.id}`, dbErr);
+                            }
+                        }
+
                         // Add pageId to each conversation to identify source
                         return convs.map((c: any) => ({ ...c, pageId: page.id }));
                     } catch (e) {
@@ -116,10 +174,52 @@ export async function fetchConversations(accessToken: string, pages: { id: strin
     }
 }
 
-export async function fetchMessages(accessToken: string, conversationId: string, pageId: string, pageAccessToken?: string) {
+export async function fetchMessages(conversationId: string, pageId: string, pageAccessToken?: string) {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+        throw new Error("Not authenticated");
+    }
+
+    // @ts-ignore
+    const userId = session.user.id;
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { facebookAccessToken: true }
+    });
+
+    const accessToken = user?.facebookAccessToken;
+    if (!accessToken) {
+        throw new Error("No Facebook access token found");
+    }
+
     try {
         const { getConversationMessages } = require('@/lib/facebook');
         const messages = await getConversationMessages(accessToken, conversationId, pageId, pageAccessToken);
+
+        // Save to DB
+        try {
+            for (const msg of messages) {
+                await prisma.message.upsert({
+                    where: { id: msg.id },
+                    update: {
+                        content: msg.message,
+                        isFromPage: msg.from?.id === pageId
+                    },
+                    create: {
+                        id: msg.id,
+                        conversationId: conversationId,
+                        senderId: msg.from?.id || 'unknown',
+                        senderName: msg.from?.name || 'Unknown',
+                        content: msg.message,
+                        createdAt: new Date(msg.created_time),
+                        isFromPage: msg.from?.id === pageId
+                    }
+                });
+            }
+        } catch (dbErr) {
+            console.error("Failed to save messages to DB", dbErr);
+        }
+
         return JSON.parse(JSON.stringify(messages));
     } catch (error: any) {
         console.error('Failed to fetch messages:', error);
@@ -127,7 +227,24 @@ export async function fetchMessages(accessToken: string, conversationId: string,
     }
 }
 
-export async function sendReply(accessToken: string, pageId: string, recipientId: string, messageText: string) {
+export async function sendReply(pageId: string, recipientId: string, messageText: string) {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+        throw new Error("Not authenticated");
+    }
+
+    // @ts-ignore
+    const userId = session.user.id;
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { facebookAccessToken: true }
+    });
+
+    const accessToken = user?.facebookAccessToken;
+    if (!accessToken) {
+        throw new Error("No Facebook access token found");
+    }
+
     try {
         const { sendMessage } = require('@/lib/facebook');
         const result = await sendMessage(accessToken, pageId, recipientId, messageText);
@@ -165,10 +282,40 @@ export async function sendReply(accessToken: string, pageId: string, recipientId
 }
 
 export async function fetchConversationsFromDB(pageIds: string[]) {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+        throw new Error("Not authenticated");
+    }
+
+    // @ts-ignore
+    const userId = session.user.id;
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { facebookAccessToken: true }
+    });
+
+    const accessToken = user?.facebookAccessToken;
+    if (!accessToken) {
+        return [];
+    }
+
+    // Verify ownership of pages
+    // We fetch the user's pages from FB to ensure they actually have access to the requested pageIds
     try {
+        const { getPages } = require('@/lib/facebook');
+        const userPages = await getPages(accessToken);
+        const userPageIds = userPages.map((p: any) => p.id);
+
+        // Filter requested pageIds to only those the user owns
+        const allowedPageIds = pageIds.filter(id => userPageIds.includes(id));
+
+        if (allowedPageIds.length === 0) {
+            return [];
+        }
+
         const conversations = await prisma.conversation.findMany({
             where: {
-                pageId: { in: pageIds }
+                pageId: { in: allowedPageIds }
             },
             orderBy: {
                 updatedAt: 'desc'
@@ -199,7 +346,43 @@ export async function fetchConversationsFromDB(pageIds: string[]) {
 }
 
 export async function fetchMessagesFromDB(conversationId: string) {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+        throw new Error("Not authenticated");
+    }
+
+    // @ts-ignore
+    const userId = session.user.id;
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { facebookAccessToken: true }
+    });
+
+    const accessToken = user?.facebookAccessToken;
+    if (!accessToken) {
+        return [];
+    }
+
     try {
+        // 1. Fetch conversation to get pageId
+        const conversation = await prisma.conversation.findUnique({
+            where: { id: conversationId },
+            select: { pageId: true }
+        });
+
+        if (!conversation) return [];
+
+        // 2. Verify user owns this page
+        const { getPages } = require('@/lib/facebook');
+        const userPages = await getPages(accessToken);
+        const userPageIds = userPages.map((p: any) => p.id);
+
+        if (!userPageIds.includes(conversation.pageId)) {
+            console.error("User does not have access to this conversation's page");
+            return [];
+        }
+
+        // 3. Fetch messages
         const messages = await prisma.message.findMany({
             where: { conversationId },
             orderBy: { createdAt: 'asc' }

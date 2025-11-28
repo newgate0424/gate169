@@ -1,15 +1,21 @@
 'use client';
-'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Search, MoreHorizontal, MessageCircle, RefreshCw, Loader2, CheckSquare, Settings, Filter, Send } from 'lucide-react';
+import { Search, MoreHorizontal, MessageCircle, RefreshCw, Loader2, Settings, Send, Bell, BellOff, Volume2, VolumeX } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { fetchPages, fetchConversations, fetchMessages, sendReply } from '@/app/actions';
+import {
+    fetchPages,
+    fetchConversations,
+    fetchMessages,
+    sendReply,
+    fetchConversationsFromDB,
+    fetchMessagesFromDB
+} from '@/app/actions';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
@@ -22,13 +28,23 @@ import {
 } from "@/components/ui/dialog"
 import { Textarea } from '@/components/ui/textarea';
 
+// Notification sound URL (you can replace with your own)
+const NOTIFICATION_SOUND_URL = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2teleR0BJpTA2PeufBwFFofC4fzAlgMMKnS61/W5jQMQQ4u32/7MlwMFF3vC4/zEnwAMI4C+4//VqQAAFXW55v7cpQAGIYq95//fpwAAI3+85f/jqQAADG+95v/nqgAAI3y73v/kpgABKX+44v/epAAAKYW65P/cpAAAE2ay4P7YnwAAQYK13f7TmgAMGnqw2/vNkwAOGHiu2PnIjgANGnqt1ffDiQAPJYKw1PW+hAAQMIy01fO5fwAPKIaw0fCzegAQMo6zz+6vdQAPNo+xyOepaAATL5SwxuSjYgARLJOvw+KdXAAYPJaxxN+YVgAWPpmvv9mOTwAYPpuuutSETQAbQp6us9F+QgAaN5yurM16OgAaM5usp8ZyMgAaM5unn75qKgAaM5qmmbRhIgAaM5qllq5aGgAYL5mkk6lTEQAWL5ejkKRLCQAWL5eij6FFAQAaL5ehjaE+AAAALpihip0+AAAANJqiiZk+AAAAOpyjiJY+AAAAQp6kiJM+AAAASqClh5I+AAAAUqKmiJI+AAAAWqSnhpE+AAAAYqaoho8+AAAAaqioho0+AAAAcqqohos+AAAAequphok+AAAA';
+
 export default function AssetsPage() {
     const { data: session } = useSession();
     // @ts-ignore
     const facebookToken = session?.user?.facebookAccessToken;
 
     const [pages, setPages] = useState<any[]>([]);
-    const [selectedPageIds, setSelectedPageIds] = useState<string[]>([]);
+    const [selectedPageIds, setSelectedPageIds] = useState<string[]>(() => {
+        // Load from localStorage on initial render
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('selectedPageIds');
+            return saved ? JSON.parse(saved) : [];
+        }
+        return [];
+    });
     const [tempSelectedPageIds, setTempSelectedPageIds] = useState<string[]>([]);
     const [conversations, setConversations] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
@@ -42,6 +58,120 @@ export default function AssetsPage() {
     const [replyText, setReplyText] = useState('');
     const [sending, setSending] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    // Notification State
+    const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+    const [soundEnabled, setSoundEnabled] = useState(true);
+    const [lastCheckTime, setLastCheckTime] = useState<string>(new Date().toISOString());
+    const [unreadCount, setUnreadCount] = useState(0);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    // Save selectedPageIds to localStorage whenever it changes
+    useEffect(() => {
+        if (selectedPageIds.length > 0) {
+            localStorage.setItem('selectedPageIds', JSON.stringify(selectedPageIds));
+        }
+    }, [selectedPageIds]);
+
+    // Initialize audio element
+    useEffect(() => {
+        audioRef.current = new Audio(NOTIFICATION_SOUND_URL);
+        audioRef.current.volume = 0.5;
+        
+        // Request notification permission on mount
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+        
+        return () => {
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current = null;
+            }
+        };
+    }, []);
+
+    // Play notification sound
+    const playNotificationSound = useCallback(() => {
+        if (soundEnabled && audioRef.current) {
+            audioRef.current.currentTime = 0;
+            audioRef.current.play().catch(err => console.log('Audio play failed:', err));
+        }
+    }, [soundEnabled]);
+
+    // Show browser notification
+    const showNotification = useCallback((title: string, body: string) => {
+        if (notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+            const notification = new Notification(title, {
+                body,
+                icon: '/favicon.ico',
+                tag: 'new-message',
+            });
+            
+            notification.onclick = () => {
+                window.focus();
+                notification.close();
+            };
+            
+            // Auto close after 5 seconds
+            setTimeout(() => notification.close(), 5000);
+        }
+    }, [notificationsEnabled]);
+
+    // Poll for new messages - Real-time polling every 2 seconds
+    useEffect(() => {
+        if (selectedPageIds.length === 0) return;
+
+        const pollForMessages = async () => {
+            try {
+                const response = await fetch(
+                    `/api/messages/stream?pageIds=${selectedPageIds.join(',')}&lastCheck=${lastCheckTime}`
+                );
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data.messages && data.messages.length > 0) {
+                        // New messages received!
+                        console.log('📩 New messages:', data.messages.length);
+                        playNotificationSound();
+                        
+                        const latestMessage = data.messages[0];
+                        showNotification(
+                            '💬 ข้อความใหม่',
+                            `${latestMessage.senderName || 'ลูกค้า'}: ${latestMessage.content?.substring(0, 50) || 'ส่งข้อความ'}`
+                        );
+                        
+                        // Refresh conversations list
+                        loadConversations(selectedPageIds);
+                        
+                        // If viewing the conversation that received new message, refresh messages
+                        if (selectedConversation && data.messages.some((m: any) => m.conversationId === selectedConversation.id)) {
+                            loadMessages(selectedConversation.id, selectedConversation.pageId);
+                        }
+                    }
+                    
+                    // Update unread count
+                    if (data.unreadConversations) {
+                        const totalUnread = data.unreadConversations.reduce((sum: number, c: any) => sum + c.unreadCount, 0);
+                        setUnreadCount(totalUnread);
+                    }
+                    
+                    setLastCheckTime(data.timestamp || new Date().toISOString());
+                }
+            } catch (error) {
+                console.error('Polling error:', error);
+            }
+        };
+
+        // Initial poll
+        pollForMessages();
+
+        // Poll every 2 seconds for near real-time updates
+        const pollInterval = setInterval(pollForMessages, 2000);
+
+        return () => clearInterval(pollInterval);
+    }, [selectedPageIds, lastCheckTime, selectedConversation, playNotificationSound, showNotification]);
 
     useEffect(() => {
         if (facebookToken) {
@@ -80,11 +210,14 @@ export default function AssetsPage() {
     const loadPages = async () => {
         setLoading(true);
         try {
-            const data = await fetchPages(facebookToken);
+            const data = await fetchPages();
             setPages(data);
-            // Auto-select first page if available and nothing selected
+            // Only auto-select first page if no pages selected and nothing in localStorage
             if (data.length > 0 && selectedPageIds.length === 0) {
-                setSelectedPageIds([data[0].id]);
+                const saved = localStorage.getItem('selectedPageIds');
+                if (!saved || JSON.parse(saved).length === 0) {
+                    setSelectedPageIds([data[0].id]);
+                }
             }
         } catch (error) {
             console.error("Failed to load pages", error);
@@ -96,28 +229,56 @@ export default function AssetsPage() {
     const loadConversations = async (pageIds: string[]) => {
         setLoadingChat(true);
         try {
-            // Filter pages to get the full objects for the selected IDs
             const selectedPages = pages.filter(p => pageIds.includes(p.id));
-            const data = await fetchConversations(facebookToken, selectedPages);
-            setConversations(data);
+            const data = await fetchConversations(selectedPages);
+
+            if (data.length === 0) {
+                console.log("API returned empty, trying DB fallback...");
+                const dbData = await fetchConversationsFromDB(pageIds);
+                setConversations(dbData);
+            } else {
+                setConversations(data);
+            }
         } catch (error) {
             console.error("Failed to load conversations", error);
+            try {
+                const dbData = await fetchConversationsFromDB(pageIds);
+                setConversations(dbData);
+            } catch (dbErr) {
+                console.error("DB fallback failed", dbErr);
+            }
         } finally {
             setLoadingChat(false);
         }
     };
 
     const loadMessages = async (conversationId: string, pageId: string) => {
-        if (loadingMessages) return; // Prevent concurrent fetches
+        if (loadingMessages) return;
         console.log(`Loading messages for conversation: ${conversationId}`);
         setLoadingMessages(true);
         try {
-            // Find the page to get its token
             const page = pages.find(p => p.id === pageId);
-            const data = await fetchMessages(facebookToken, conversationId, pageId, page?.access_token);
-            setMessages(data);
+            const data = await fetchMessages(conversationId, pageId, page?.access_token);
+
+            if (data.length === 0) {
+                console.log("API messages empty, trying DB...");
+                const dbData = await fetchMessagesFromDB(conversationId);
+                if (dbData.length > 0) {
+                    setMessages(dbData);
+                } else {
+                    setMessages([]);
+                }
+            } else {
+                setMessages(data);
+            }
         } catch (error) {
             console.error("Failed to load messages", error);
+            try {
+                const dbData = await fetchMessagesFromDB(conversationId);
+                setMessages(dbData);
+            } catch (dbErr) {
+                console.error("DB message fallback failed", dbErr);
+            }
         } finally {
             setLoadingMessages(false);
         }
@@ -127,10 +288,9 @@ export default function AssetsPage() {
         if (!replyText.trim() || !selectedConversation) return;
 
         const currentReply = replyText;
-        setReplyText(''); // Clear input immediately
+        setReplyText('');
         setSending(true);
 
-        // Optimistic Update: Add message to UI immediately
         const optimisticMsg = {
             id: `temp-${Date.now()}`,
             message: currentReply,
@@ -141,7 +301,6 @@ export default function AssetsPage() {
         setMessages(prev => [...prev, optimisticMsg]);
 
         try {
-            // Recipient ID is usually the first participant that is NOT the page itself
             const recipientId = selectedConversation.participants?.data[0]?.id;
 
             if (!recipientId) {
@@ -149,16 +308,14 @@ export default function AssetsPage() {
                 return;
             }
 
-            const result = await sendReply(facebookToken, selectedConversation.pageId, recipientId, currentReply);
+            const result = await sendReply(selectedConversation.pageId, recipientId, currentReply);
 
             if (result.success) {
-                // Success - wait a bit for Facebook to index the message before refreshing
                 setTimeout(() => {
                     loadMessages(selectedConversation.id, selectedConversation.pageId);
                 }, 2000);
             } else {
                 console.error("Failed to send reply:", result.error);
-                // Revert optimistic update by reloading real messages
                 loadMessages(selectedConversation.id, selectedConversation.pageId);
             }
         } catch (error) {
@@ -193,20 +350,53 @@ export default function AssetsPage() {
     const getPageDetails = (pageId: string) => pages.find(p => p.id === pageId);
 
     return (
-        <div className="flex flex-col h-[calc(100vh-8rem)] gap-6">
-            {/* Header / Toolbar */}
+        <div className="h-[calc(100vh-8rem)] flex flex-col gap-4">
+            {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Inbox</h1>
+                    <h1 className="text-2xl font-bold text-gray-900">
+                        Inbox
+                        {unreadCount > 0 && (
+                            <span className="ml-2 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-500 rounded-full">
+                                {unreadCount}
+                            </span>
+                        )}
+                    </h1>
                     <p className="text-sm text-gray-500">Manage messages from all your connected pages</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                            if ('Notification' in window && Notification.permission !== 'granted') {
+                                Notification.requestPermission();
+                            }
+                            setNotificationsEnabled(!notificationsEnabled);
+                        }}
+                        title={notificationsEnabled ? 'ปิดการแจ้งเตือน' : 'เปิดการแจ้งเตือน'}
+                        className={notificationsEnabled ? 'text-blue-600' : 'text-gray-400'}
+                    >
+                        {notificationsEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setSoundEnabled(!soundEnabled)}
+                        title={soundEnabled ? 'ปิดเสียง' : 'เปิดเสียง'}
+                        className={soundEnabled ? 'text-blue-600' : 'text-gray-400'}
+                    >
+                        {soundEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+                    </Button>
                 </div>
             </div>
 
-            {/* Main Content: Chat Interface */}
-            <Card className="flex-1 flex overflow-hidden border-gray-200 shadow-sm">
-                {/* Conversation List (Left) */}
-                <div className="w-80 border-r border-gray-200 bg-white flex flex-col">
-                    <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-white gap-2">
+            {/* Chat Container */}
+            <Card className="flex-1 flex flex-row overflow-hidden">
+                {/* Left Panel - Conversation List */}
+                <div className="w-80 flex-shrink-0 border-r border-gray-200 flex flex-col bg-white">
+                    {/* Header */}
+                    <div className="p-4 border-b flex items-center justify-between">
                         <h2 className="font-semibold text-gray-900">Messages</h2>
                         <div className="flex items-center gap-1">
                             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -267,15 +457,16 @@ export default function AssetsPage() {
                             </Button>
                         </div>
                     </div>
-                    <div className="p-2 border-b border-gray-100 bg-gray-50/50">
+
+                    {/* Search */}
+                    <div className="p-2 border-b bg-gray-50">
                         <div className="relative">
                             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-                            <Input
-                                placeholder="Search messages..."
-                                className="pl-9 bg-white border-gray-200 h-9"
-                            />
+                            <Input placeholder="Search messages..." className="pl-9 bg-white h-9" />
                         </div>
                     </div>
+
+                    {/* Conversation List */}
                     <ScrollArea className="flex-1">
                         {loadingChat ? (
                             <div className="flex justify-center py-8">
@@ -293,7 +484,7 @@ export default function AssetsPage() {
                                 return (
                                     <div
                                         key={conv.id}
-                                        className={`p-4 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors ${selectedConversation?.id === conv.id ? 'bg-blue-50/50' : ''}`}
+                                        className={`p-4 border-b hover:bg-gray-50 cursor-pointer transition-colors ${selectedConversation?.id === conv.id ? 'bg-blue-50' : ''}`}
                                         onClick={() => setSelectedConversation(conv)}
                                     >
                                         <div className="flex justify-between items-start mb-1">
@@ -304,18 +495,15 @@ export default function AssetsPage() {
                                                 {new Date(conv.updated_time).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                                             </span>
                                         </div>
-
                                         <div className="text-sm text-gray-500 truncate mb-2">
                                             {conv.snippet || 'No messages'}
                                         </div>
-
-                                        {/* Page Indicator */}
-                                        <div className="flex items-center gap-1.5 mt-2">
+                                        <div className="flex items-center gap-1.5">
                                             <Avatar className="h-4 w-4">
                                                 <AvatarImage src={page?.picture?.data?.url} />
-                                                <AvatarFallback className="text-[8px]">{page?.name.charAt(0)}</AvatarFallback>
+                                                <AvatarFallback className="text-[8px]">{page?.name?.charAt(0)}</AvatarFallback>
                                             </Avatar>
-                                            <span className="text-[10px] text-gray-400 truncate max-w-[150px]">
+                                            <span className="text-[10px] text-gray-400 truncate">
                                                 via {page?.name}
                                             </span>
                                         </div>
@@ -326,12 +514,12 @@ export default function AssetsPage() {
                     </ScrollArea>
                 </div>
 
-                {/* Message View (Right) */}
-                <div className="flex-1 flex flex-col bg-gray-50/30">
+                {/* Right Panel - Chat View */}
+                <div className="flex-1 flex flex-col bg-gray-50">
                     {selectedConversation ? (
                         <>
                             {/* Chat Header */}
-                            <div className="p-4 border-b border-gray-200 bg-white flex items-center justify-between shadow-sm z-10">
+                            <div className="p-4 border-b bg-white flex items-center justify-between">
                                 <div className="flex items-center gap-3">
                                     <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
                                         {(selectedConversation.participants?.data[0]?.name || 'U').charAt(0)}
@@ -340,8 +528,8 @@ export default function AssetsPage() {
                                         <h2 className="font-semibold text-gray-900">
                                             {selectedConversation.participants?.data[0]?.name || 'Unknown User'}
                                         </h2>
-                                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                                            <span>via {getPageDetails(selectedConversation.pageId)?.name || 'Unknown Page'}</span>
+                                        <div className="text-xs text-gray-500">
+                                            via {getPageDetails(selectedConversation.pageId)?.name || 'Unknown Page'}
                                         </div>
                                     </div>
                                 </div>
@@ -350,25 +538,32 @@ export default function AssetsPage() {
                                 </Button>
                             </div>
 
-                            {/* Messages Area */}
-                            <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>
+                            {/* Messages */}
+                            <div className="flex-1 overflow-y-auto p-4 space-y-3" ref={scrollRef}>
                                 {loadingMessages ? (
                                     <div className="flex justify-center py-8">
                                         <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
                                     </div>
                                 ) : messages.length > 0 ? (
                                     messages.map((msg) => {
-                                        const isFromPage = msg.from?.id === selectedConversation.pageId;
+                                        const page = pages.find(p => p.id === selectedConversation.pageId);
+                                        const participantId = selectedConversation.participants?.data[0]?.id;
+                                        const isFromPage =
+                                            (msg.from?.id === selectedConversation.pageId) ||
+                                            (page && msg.from?.name === page.name) ||
+                                            (participantId && msg.from?.id !== participantId);
+
                                         return (
                                             <div key={msg.id} className={`flex ${isFromPage ? 'justify-end' : 'justify-start'}`}>
                                                 <div className={`max-w-[70%] rounded-2xl px-4 py-2 text-sm ${isFromPage
                                                     ? 'bg-blue-600 text-white rounded-br-none'
-                                                    : 'bg-white border border-gray-200 text-gray-900 rounded-bl-none shadow-sm'
+                                                    : 'bg-white border text-gray-900 rounded-bl-none shadow-sm'
                                                     }`}>
                                                     <p>{msg.message}</p>
-                                                    <p className={`text-[10px] mt-1 ${isFromPage ? 'text-blue-100' : 'text-gray-400'}`}>
+                                                    <div className={`text-[10px] mt-1 ${isFromPage ? 'text-blue-100' : 'text-gray-400'}`}>
                                                         {new Date(msg.created_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                    </p>
+                                                        <span className="opacity-50"> • {msg.from?.name}</span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         );
@@ -381,14 +576,14 @@ export default function AssetsPage() {
                             </div>
 
                             {/* Input Area */}
-                            <div className="p-4 bg-white border-t border-gray-200">
+                            <div className="p-4 bg-white border-t">
                                 <div className="flex gap-2">
                                     <Textarea
                                         placeholder="Type your reply..."
-                                        className="min-h-[50px] max-h-[150px] resize-none"
+                                        className="min-h-[50px] max-h-[150px] resize-none flex-1"
                                         value={replyText}
-                                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReplyText(e.target.value)}
-                                        onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+                                        onChange={(e) => setReplyText(e.target.value)}
+                                        onKeyDown={(e) => {
                                             if (e.key === 'Enter' && !e.shiftKey) {
                                                 e.preventDefault();
                                                 handleSendReply();
@@ -406,6 +601,7 @@ export default function AssetsPage() {
                             </div>
                         </>
                     ) : (
+                        /* Empty State */
                         <div className="flex-1 flex items-center justify-center text-gray-400 flex-col gap-4">
                             <div className="h-16 w-16 bg-gray-100 rounded-full flex items-center justify-center">
                                 <MessageCircle className="h-8 w-8" />

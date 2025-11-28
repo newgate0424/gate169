@@ -32,12 +32,12 @@ export function Sidebar({ isCollapsed, toggleSidebar }: SidebarProps) {
         },
         {
             title: 'Assets',
-            icon: Megaphone, // You might want to import a better icon like 'Library' or 'Files' if available, but Megaphone is okay for now or reuse one.
-            href: '/admanager/assets',
+            icon: Megaphone,
+            href: '/assets',
         },
         {
             title: 'Campaigns',
-            icon: BarChart3, // Swapped icon for variety or keep Megaphone
+            icon: BarChart3,
             href: '/admanager/campaigns',
         },
         {

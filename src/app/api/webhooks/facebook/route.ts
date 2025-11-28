@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import crypto from 'crypto';
 
 const prisma = new PrismaClient();
 
 // Verify Token - Should match what you set in Facebook App Dashboard
 const VERIFY_TOKEN = process.env.FACEBOOK_WEBHOOK_VERIFY_TOKEN || 'my_secure_verify_token';
+const APP_SECRET = process.env.FACEBOOK_CLIENT_SECRET;
 
 export async function GET(req: NextRequest) {
     const searchParams = req.nextUrl.searchParams;
@@ -26,7 +28,35 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
     try {
-        const body = await req.json();
+        // 1. Get raw body for signature verification
+        const rawBody = await req.text();
+
+        // 2. Verify Signature
+        if (APP_SECRET) {
+            const signature = req.headers.get('x-hub-signature-256');
+            if (!signature) {
+                console.warn('Missing X-Hub-Signature-256 header');
+                return new NextResponse('Unauthorized', { status: 401 });
+            }
+
+            const expectedSignature = 'sha256=' + crypto
+                .createHmac('sha256', APP_SECRET)
+                .update(rawBody)
+                .digest('hex');
+
+            // Constant time comparison to prevent timing attacks
+            const sigBuffer = Buffer.from(signature, 'utf8');
+            const expectedBuffer = Buffer.from(expectedSignature, 'utf8');
+
+            if (sigBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
+                console.warn('Invalid X-Hub-Signature-256');
+                return new NextResponse('Unauthorized', { status: 401 });
+            }
+        } else {
+            console.warn('FACEBOOK_CLIENT_SECRET not set, skipping signature verification (INSECURE)');
+        }
+
+        const body = JSON.parse(rawBody);
 
         if (body.object === 'page') {
             // Iterate over each entry - there may be multiple if batched
