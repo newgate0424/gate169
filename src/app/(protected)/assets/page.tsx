@@ -548,10 +548,9 @@ export default function AssetsPage() {
                                     messages.map((msg) => {
                                         const page = pages.find(p => p.id === selectedConversation.pageId);
                                         const participantId = selectedConversation.participants?.data[0]?.id;
-                                        const isFromPage =
-                                            (msg.from?.id === selectedConversation.pageId) ||
-                                            (page && msg.from?.name === page.name) ||
-                                            (participantId && msg.from?.id !== participantId);
+
+                                        // Strict check for page ownership
+                                        const isFromPage = msg.from?.id === selectedConversation.pageId;
 
                                         return (
                                             <div key={msg.id} className={`flex ${isFromPage ? 'justify-end' : 'justify-start'}`}>

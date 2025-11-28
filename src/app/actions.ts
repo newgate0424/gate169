@@ -1,4 +1,4 @@
-'use server';
+﻿'use server';
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -105,7 +105,6 @@ export async function fetchConversations(pages: { id: string, access_token?: str
     try {
         console.log(`Fetching conversations for ${pages.length} pages`);
 
-        // We'll implement getPageConversations in facebook.ts next
         const { getPageConversations } = require('@/lib/facebook');
 
         // Batch processing to avoid rate limits
@@ -119,34 +118,54 @@ export async function fetchConversations(pages: { id: string, access_token?: str
             const chunkResults = await Promise.all(
                 chunk.map(async (page) => {
                     try {
-                        // Pass the token if available to save an API call
                         const convs = await getPageConversations(accessToken, page.id, page.access_token);
+                        const mappedConvs = [];
 
-                        // Save to DB
                         for (const conv of convs) {
+                            let participantId: string | null = null;
+                            let participantName = 'Customer';
+
+                            if (conv.participants && conv.participants.data) {
+                                const userParticipant = conv.participants.data.find((p: any) => p.id !== page.id);
+                                if (userParticipant) {
+                                    participantId = userParticipant.id;
+                                    participantName = userParticipant.name;
+                                }
+                            }
+
                             try {
                                 await prisma.conversation.upsert({
                                     where: { id: conv.id },
                                     update: {
                                         updatedAt: new Date(conv.updated_time),
                                         snippet: conv.snippet,
-                                        unreadCount: conv.unread_count || 0
+                                        unreadCount: conv.unread_count || 0,
+                                        participantId: participantId,
+                                        participantName: participantName
                                     },
                                     create: {
                                         id: conv.id,
                                         pageId: page.id,
                                         updatedAt: new Date(conv.updated_time),
                                         snippet: conv.snippet,
-                                        unreadCount: conv.unread_count || 0
+                                        unreadCount: conv.unread_count || 0,
+                                        participantId: participantId,
+                                        participantName: participantName
                                     }
                                 });
                             } catch (dbErr) {
                                 console.error(`Failed to save conversation ${conv.id}`, dbErr);
                             }
-                        }
 
-                        // Add pageId to each conversation to identify source
-                        return convs.map((c: any) => ({ ...c, pageId: page.id }));
+                            mappedConvs.push({
+                                ...conv,
+                                pageId: page.id,
+                                participants: {
+                                    data: [{ name: participantName, id: participantId || conv.id }] // Keep conv.id ONLY for UI display if needed, but DB has null
+                                }
+                            });
+                        }
+                        return mappedConvs;
                     } catch (e) {
                         console.error(`Failed to fetch for page ${page.id}`, e);
                         return [];
@@ -156,7 +175,6 @@ export async function fetchConversations(pages: { id: string, access_token?: str
 
             allConversations.push(...chunkResults.flat());
 
-            // Add a small delay between batches to be nice to the API
             if (i + BATCH_SIZE < pages.length) {
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
@@ -170,7 +188,7 @@ export async function fetchConversations(pages: { id: string, access_token?: str
         return JSON.parse(JSON.stringify(flatConversations));
     } catch (error: any) {
         console.error('Failed to fetch conversations:', error);
-        return []; // Return empty array on error for now
+        return [];
     }
 }
 
@@ -299,14 +317,10 @@ export async function fetchConversationsFromDB(pageIds: string[]) {
         return [];
     }
 
-    // Verify ownership of pages
-    // We fetch the user's pages from FB to ensure they actually have access to the requested pageIds
     try {
         const { getPages } = require('@/lib/facebook');
         const userPages = await getPages(accessToken);
         const userPageIds = userPages.map((p: any) => p.id);
-
-        // Filter requested pageIds to only those the user owns
         const allowedPageIds = pageIds.filter(id => userPageIds.includes(id));
 
         if (allowedPageIds.length === 0) {
@@ -328,17 +342,15 @@ export async function fetchConversationsFromDB(pageIds: string[]) {
             }
         });
 
-        // Map to match Facebook API structure roughly
         return conversations.map(c => {
-            // Try to find a name and ID from the latest message
-            let participantName = 'Customer';
-            let participantId = c.id; // Fallback to conversation ID
+            let participantName = c.participantName || 'Customer';
+            let participantId = c.participantId; // NO FALLBACK to c.id
 
-            if (c.messages.length > 0) {
+            if (!c.participantId && c.messages.length > 0) {
                 const msg = c.messages[0];
                 if (!msg.isFromPage && msg.senderName) {
                     participantName = msg.senderName;
-                    participantId = msg.senderId; // Use the actual sender ID (PSID)
+                    participantId = msg.senderId;
                 }
             }
 
@@ -349,7 +361,7 @@ export async function fetchConversationsFromDB(pageIds: string[]) {
                 snippet: c.snippet,
                 unread_count: c.unreadCount,
                 participants: {
-                    data: [{ name: participantName, id: participantId }]
+                    data: [{ name: participantName, id: participantId }] // Can be null
                 }
             };
         });
@@ -358,6 +370,7 @@ export async function fetchConversationsFromDB(pageIds: string[]) {
         return [];
     }
 }
+
 export async function fetchMessagesFromDB(conversationId: string) {
     const session = await getServerSession(authOptions);
     if (!session || !session.user) {
@@ -377,7 +390,6 @@ export async function fetchMessagesFromDB(conversationId: string) {
     }
 
     try {
-        // 1. Fetch conversation to get pageId
         const conversation = await prisma.conversation.findUnique({
             where: { id: conversationId },
             select: { pageId: true }
@@ -385,7 +397,6 @@ export async function fetchMessagesFromDB(conversationId: string) {
 
         if (!conversation) return [];
 
-        // 2. Verify user owns this page
         const { getPages } = require('@/lib/facebook');
         const userPages = await getPages(accessToken);
         const userPageIds = userPages.map((p: any) => p.id);
@@ -395,7 +406,6 @@ export async function fetchMessagesFromDB(conversationId: string) {
             return [];
         }
 
-        // 3. Fetch messages
         const messages = await prisma.message.findMany({
             where: { conversationId },
             orderBy: { createdAt: 'asc' }
