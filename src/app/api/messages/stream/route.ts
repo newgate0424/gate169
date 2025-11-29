@@ -35,6 +35,10 @@ export async function GET(req: NextRequest) {
             take: 10
         });
 
+        if (newMessages.length > 0) {
+            console.log(`Polling: Found ${newMessages.length} new messages for pages ${pageIds.join(',')}`);
+        }
+
         // Get conversations with unread count
         const unreadConversations = await prisma.conversation.findMany({
             where: {

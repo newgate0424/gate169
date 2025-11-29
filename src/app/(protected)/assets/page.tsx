@@ -143,7 +143,7 @@ export default function AssetsPage() {
                         );
 
                         // Refresh conversations list
-                        loadConversations(selectedPageIds);
+                        loadConversations(selectedPageIds, true);
 
                         // If viewing the conversation that received new message, refresh messages
                         if (selectedConversation && data.messages.some((m: any) => m.conversationId === selectedConversation.id)) {
@@ -226,8 +226,8 @@ export default function AssetsPage() {
         }
     };
 
-    const loadConversations = async (pageIds: string[]) => {
-        setLoadingChat(true);
+    const loadConversations = async (pageIds: string[], background = false) => {
+        if (!background) setLoadingChat(true);
         try {
             const selectedPages = pages.filter(p => pageIds.includes(p.id));
             const data = await fetchConversations(selectedPages);
@@ -248,7 +248,7 @@ export default function AssetsPage() {
                 console.error("DB fallback failed", dbErr);
             }
         } finally {
-            setLoadingChat(false);
+            if (!background) setLoadingChat(false);
         }
     };
 

@@ -108,7 +108,7 @@ export async function fetchConversations(pages: { id: string, access_token?: str
         const { getPageConversations } = require('@/lib/facebook');
 
         // Batch processing to avoid rate limits
-        const BATCH_SIZE = 5;
+        const BATCH_SIZE = 10; // Increased batch size
         const allConversations: any[] = [];
 
         for (let i = 0; i < pages.length; i += BATCH_SIZE) {
@@ -120,6 +120,7 @@ export async function fetchConversations(pages: { id: string, access_token?: str
                     try {
                         const convs = await getPageConversations(accessToken, page.id, page.access_token);
                         const mappedConvs = [];
+                        const dbOps = [];
 
                         for (const conv of convs) {
                             let participantId: string | null = null;
@@ -133,8 +134,9 @@ export async function fetchConversations(pages: { id: string, access_token?: str
                                 }
                             }
 
-                            try {
-                                await prisma.conversation.upsert({
+                            // Push DB operation to array for parallel execution
+                            dbOps.push(
+                                prisma.conversation.upsert({
                                     where: { id: conv.id },
                                     update: {
                                         updatedAt: new Date(conv.updated_time),
@@ -152,19 +154,23 @@ export async function fetchConversations(pages: { id: string, access_token?: str
                                         participantId: participantId,
                                         participantName: participantName
                                     }
-                                });
-                            } catch (dbErr) {
-                                console.error(`Failed to save conversation ${conv.id}`, dbErr);
-                            }
+                                }).catch(dbErr => {
+                                    console.error(`Failed to save conversation ${conv.id}`, dbErr);
+                                })
+                            );
 
                             mappedConvs.push({
                                 ...conv,
                                 pageId: page.id,
                                 participants: {
-                                    data: [{ name: participantName, id: participantId || conv.id }] // Keep conv.id ONLY for UI display if needed, but DB has null
+                                    data: [{ name: participantName, id: participantId || conv.id }]
                                 }
                             });
                         }
+
+                        // Execute all DB upserts for this page in parallel
+                        await Promise.all(dbOps);
+
                         return mappedConvs;
                     } catch (e) {
                         console.error(`Failed to fetch for page ${page.id}`, e);
@@ -174,10 +180,7 @@ export async function fetchConversations(pages: { id: string, access_token?: str
             );
 
             allConversations.push(...chunkResults.flat());
-
-            if (i + BATCH_SIZE < pages.length) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
+            // Removed artificial delay
         }
 
         const flatConversations = allConversations.sort((a: any, b: any) => {
@@ -214,10 +217,10 @@ export async function fetchMessages(conversationId: string, pageId: string, page
         const { getConversationMessages } = require('@/lib/facebook');
         const messages = await getConversationMessages(accessToken, conversationId, pageId, pageAccessToken);
 
-        // Save to DB
+        // Save to DB in parallel
         try {
-            for (const msg of messages) {
-                await prisma.message.upsert({
+            const dbOps = messages.map((msg: any) =>
+                prisma.message.upsert({
                     where: { id: msg.id },
                     update: {
                         content: msg.message,
@@ -232,8 +235,9 @@ export async function fetchMessages(conversationId: string, pageId: string, page
                         createdAt: new Date(msg.created_time),
                         isFromPage: msg.from?.id === pageId
                     }
-                });
-            }
+                })
+            );
+            await Promise.all(dbOps);
         } catch (dbErr) {
             console.error("Failed to save messages to DB", dbErr);
         }

@@ -123,7 +123,23 @@ async function handleMessage(pageId: string, event: any) {
         // Ideally we should fetch the real conversation ID from Graph API
         // For now, let's use the otherUserId as the conversation ID for 1:1 chats
         // This assumes 1 user = 1 conversation per page
-        const conversationId = otherUserId;
+        // Find existing conversation by participantId and pageId
+        const existingConversation = await prisma.conversation.findFirst({
+            where: {
+                pageId: pageId,
+                participantId: otherUserId
+            }
+        });
+
+        let conversationId: string;
+
+        if (existingConversation && existingConversation.id) {
+            conversationId = existingConversation.id;
+            console.log(`Webhook: Found existing conversation ${conversationId} for user ${otherUserId}`);
+        } else {
+            conversationId = otherUserId;
+            console.log(`Webhook: No existing conversation found for user ${otherUserId} on page ${pageId}. Using User ID as fallback.`);
+        }
 
         await prisma.conversation.upsert({
             where: { id: conversationId },
@@ -137,7 +153,9 @@ async function handleMessage(pageId: string, event: any) {
                 pageId: pageId,
                 updatedAt: new Date(timestamp),
                 snippet: message.text,
-                unreadCount: 1
+                unreadCount: 1,
+                participantId: otherUserId, // Ensure we save this for future lookups
+                participantName: 'New User' // Placeholder until sync
             }
         });
 
