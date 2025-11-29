@@ -1,34 +1,121 @@
 import { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import { PrismaAdapter } from "@next-auth/prisma-adapter";
-import { PrismaClient } from "@prisma/client";
+import CredentialsProvider from "next-auth/providers/credentials";
+import bcrypt from "bcryptjs";
+import { DualDatabaseAdapter, prisma } from "./auth-adapter";
+import { db } from "./db";
 
-const prisma = new PrismaClient();
+// Test database connection on startup
+prisma.$connect()
+    .then(() => {
+        console.log('✅ [Database] Connected successfully to MySQL');
+    })
+    .catch((error: Error) => {
+        console.error('❌ [Database] MySQL unavailable, will use MongoDB fallback');
+    });
 
 export const authOptions: NextAuthOptions = {
-    adapter: PrismaAdapter(prisma),
+    adapter: DualDatabaseAdapter(),
+    debug: process.env.NODE_ENV === 'development', // Enable NextAuth debug logs
+    session: {
+        strategy: "jwt", // Use JWT for credentials provider
+    },
     providers: [
         GoogleProvider({
             clientId: process.env.GOOGLE_CLIENT_ID!,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
         }),
+        CredentialsProvider({
+            name: 'Credentials',
+            credentials: {
+                email: { label: "Email", type: "email" },
+                password: { label: "Password", type: "password" }
+            },
+            async authorize(credentials) {
+                if (!credentials?.email || !credentials?.password) {
+                    throw new Error('Please enter email and password');
+                }
+
+                // Find user by email
+                const user = await db.findUserByEmail(credentials.email);
+
+                if (!user || !user.password) {
+                    throw new Error('Invalid email or password');
+                }
+
+                // Verify password
+                const isPasswordValid = await bcrypt.compare(
+                    credentials.password,
+                    user.password
+                );
+
+                if (!isPasswordValid) {
+                    throw new Error('Invalid email or password');
+                }
+
+                return {
+                    id: user.id,
+                    email: user.email,
+                    name: user.name,
+                    image: user.image,
+                };
+            }
+        }),
     ],
     callbacks: {
-        async session({ session, user }) {
-            if (session.user) {
+        async signIn({ user, account, profile }) {
+            console.log('🔐 [Auth] Sign-in attempt:', {
+                email: user.email,
+                provider: account?.provider
+            });
+            return true;
+        },
+        async jwt({ token, user, account }) {
+            // Initial sign in
+            if (user) {
+                token.id = user.id;
+                token.email = user.email;
+                token.name = user.name;
+                token.picture = user.image;
+            }
+            return token;
+        },
+        async session({ session, token }) {
+            // Add user id to session
+            if (session.user && token) {
                 // @ts-ignore
-                session.user.id = user.id;
+                session.user.id = token.id || token.sub;
+
                 // Fetch the user from DB to get the facebookAccessToken
-                const dbUser = await prisma.user.findUnique({
-                    where: { id: user.id },
-                });
-                // @ts-ignore
-                session.user.facebookAccessToken = dbUser?.facebookAccessToken;
+                try {
+                    // @ts-ignore
+                    const dbUser = await db.findUserById(token.id || token.sub);
+                    // @ts-ignore
+                    session.user.facebookAccessToken = dbUser?.facebookAccessToken;
+                    console.log('✅ [Auth] Session loaded successfully');
+                } catch (error) {
+                    console.error('❌ [Auth] Failed to load user from DB:', error);
+                }
             }
             return session;
         },
     },
+    events: {
+        async signIn({ user }) {
+            console.log('✅ [Auth] User signed in:', user.email);
+        },
+        async signOut({ session }) {
+            console.log('👋 [Auth] User signed out');
+        },
+        async createUser({ user }) {
+            console.log('🆕 [Auth] New user created:', user.email);
+        },
+        async linkAccount({ user, account }) {
+            console.log('🔗 [Auth] Account linked:', { userId: user.id, provider: account.provider });
+        },
+    },
     pages: {
         signIn: '/', // Redirect to landing page for sign in
+        error: '/', // Redirect errors to landing page
     },
 };

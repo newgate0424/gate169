@@ -1,20 +1,19 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
     LayoutDashboard,
+    MessageCircle,
     Settings,
-    ChevronLeft,
-    ChevronRight,
-    Megaphone,
     Users,
     CreditCard,
-    BarChart3
+    BarChart3,
+    ChevronLeft,
+    ChevronRight,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface SidebarProps {
     isCollapsed: boolean;
@@ -23,87 +22,92 @@ interface SidebarProps {
 
 export function Sidebar({ isCollapsed, toggleSidebar }: SidebarProps) {
     const pathname = usePathname();
+    const { t } = useLanguage();
 
     const menuItems = [
         {
-            title: 'Overview',
+            title: t('sidebar.overview'),
             icon: LayoutDashboard,
+            href: '/overview',
+        },
+        {
+            title: t('sidebar.adbox'),
+            icon: MessageCircle,
+            href: '/adbox',
+        },
+        {
+            title: t('sidebar.admanager'),
+            icon: BarChart3,
             href: '/admanager',
         },
         {
-            title: 'Assets',
-            icon: Megaphone,
-            href: '/assets',
-        },
-        {
-            title: 'Campaigns',
-            icon: BarChart3,
-            href: '/admanager/campaigns',
-        },
-        {
-            title: 'Audiences',
+            title: t('sidebar.audiences'),
             icon: Users,
             href: '/admanager/audiences',
         },
         {
-            title: 'Reports',
+            title: t('sidebar.reports'),
             icon: BarChart3,
             href: '/admanager/reports',
         },
         {
-            title: 'Billing',
+            title: t('sidebar.billing'),
             icon: CreditCard,
             href: '/admanager/billing',
         },
         {
-            title: 'Settings',
+            title: t('sidebar.settings'),
             icon: Settings,
-            href: '/admanager/settings',
+            href: '/settings/permissions',
         },
     ];
 
     return (
         <div
             className={cn(
-                "relative flex flex-col border-r border-gray-200 bg-white transition-all duration-300 ease-in-out h-[calc(100vh-4rem)]",
+                "flex flex-col bg-white transition-all duration-300 ease-in-out h-full border-r border-gray-200 z-10 flex-shrink-0",
                 isCollapsed ? "w-16" : "w-64"
             )}
         >
-            <div className="flex items-center justify-end p-4">
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={toggleSidebar}
-                    className="h-6 w-6 rounded-full border border-gray-200 bg-white shadow-sm hover:bg-gray-100"
-                >
-                    {isCollapsed ? (
-                        <ChevronRight className="h-3 w-3" />
-                    ) : (
-                        <ChevronLeft className="h-3 w-3" />
-                    )}
-                </Button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto py-4">
-                <nav className="grid gap-1 px-2">
-                    {menuItems.map((item, index) => {
+            <nav className="flex-1 overflow-y-auto py-6">
+                <ul className="space-y-2 px-2">
+                    {menuItems.map((item) => {
+                        const Icon = item.icon;
                         const isActive = pathname === item.href;
+
                         return (
-                            <Link
-                                key={index}
-                                href={item.href}
-                                className={cn(
-                                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-gray-100 hover:text-gray-900",
-                                    isActive ? "bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700" : "text-gray-500",
-                                    isCollapsed && "justify-center px-2"
-                                )}
-                            >
-                                <item.icon className={cn("h-5 w-5", isActive ? "text-blue-600" : "text-gray-400")} />
-                                {!isCollapsed && <span>{item.title}</span>}
-                            </Link>
+                            <li key={item.href}>
+                                <Link
+                                    href={item.href}
+                                    className={cn(
+                                        "flex items-center gap-3 p-2 rounded-xl transition-all duration-200 group relative",
+                                        isCollapsed ? "justify-center flex-col gap-1" : "px-4 py-3",
+                                        isActive
+                                            ? "bg-blue-50 text-blue-600"
+                                            : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                                    )}
+                                    title={isCollapsed ? item.title : undefined}
+                                >
+                                    <Icon className={cn("flex-shrink-0", isCollapsed ? "h-5 w-5" : "h-5 w-5", isActive ? "text-blue-600" : "text-gray-500 group-hover:text-gray-900")} />
+                                    {!isCollapsed && <span className="font-medium text-sm whitespace-nowrap">{item.title}</span>}
+                                </Link>
+                            </li>
                         );
                     })}
-                </nav>
+                </ul>
+            </nav>
+
+            <div className="p-4 border-t border-gray-100">
+                <button
+                    onClick={toggleSidebar}
+                    className={cn(
+                        "flex items-center justify-center w-full p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors",
+                        isCollapsed ? "" : "gap-2"
+                    )}
+                >
+                    {isCollapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
+                    {!isCollapsed && <span className="text-sm font-medium">Collapse Sidebar</span>}
+                </button>
             </div>
         </div>
     );

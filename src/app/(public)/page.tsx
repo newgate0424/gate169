@@ -12,15 +12,15 @@ function HomeContent() {
 
   useEffect(() => {
     if (status === 'authenticated') {
-      router.push('/admanager');
+      window.location.href = '/overview';
     }
-  }, [status, router]);
+  }, [status]);
 
   if (status === 'loading') {
     return <div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>;
   }
 
-  return <LandingPage onLogin={() => signIn('google', { callbackUrl: '/admanager' })} />;
+  return <LandingPage onLogin={() => signIn('google', { callbackUrl: '/overview' })} />;
 }
 
 export default function Home() {

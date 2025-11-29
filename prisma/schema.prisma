@@ -43,8 +43,13 @@ model User {
   accounts      Account[]
   sessions      Session[]
   
+  // Credentials auth fields
+  username      String?   @unique
+  password      String?   @db.Text
+  
   // Custom field for Facebook Access Token
   facebookAccessToken String? @db.Text
+  permissions         String? @db.Text // JSON: { canDownload: true, canManage: false, ... }
 }
 
 model VerificationToken {
@@ -59,15 +64,27 @@ model Conversation {
   id           String    @id // Facebook Conversation ID
   pageId       String
   updatedAt    DateTime  @updatedAt
+  lastMessageAt DateTime @default(now()) // เวลาข้อความล่าสุด (ไม่เปลี่ยนเมื่อ mark as read)
   snippet      String?   @db.Text
   unreadCount  Int       @default(0)
+  lastReadAt   DateTime? // Time when user last read the conversation
   
   participantId   String?
   participantName String?
+  facebookLink    String?   @db.Text // Link เปิดไปหน้า Inbox บน Facebook
+  
+  // Ad tracking - เมื่อลูกค้าทักมาจากโฆษณา
+  adId            String?   // Facebook Ad ID
+  adName          String?   // ชื่อโฆษณา (ถ้ามี)
+  
+  assigneeId      String?   // ID of the staff assigned to this chat
   
   messages     Message[]
   
   @@index([pageId])
+  @@index([adId])
+  @@index([lastMessageAt])
+  @@index([assigneeId])
 }
 
 model Message {
@@ -78,8 +95,43 @@ model Message {
   senderId       String
   senderName     String?
   content        String?      @db.Text
+  attachments    String?      @db.Text // JSON: [{type: 'sticker'|'image'|'like', url: '...'}]
+  stickerUrl     String?      @db.Text // Direct sticker URL for quick access
   createdAt      DateTime
   isFromPage     Boolean      @default(false)
   
   @@index([conversationId])
+}
+
+model PageSettings {
+  id          String   @id @default(cuid())
+  pageId      String   @unique
+  
+  // Rotation Mode
+  rotationMode String  @default("OFF") // OFF, MANUAL, GROUP, USER
+  
+  // Advanced Settings
+  distributionMethod String @default("EQUAL") // EQUAL
+  keepAssignment     Boolean @default(false)
+  shuffleUsers       Boolean @default(false)
+  maxUsersPerChat    Int     @default(1)
+  
+  // Active Users for Rotation (List of Facebook User IDs)
+  activeRotationUserIds String? @db.Text // JSON: ["fb_id_1", "fb_id_2"]
+  
+  // Transfer Settings
+  transferIfUnreadMinutes Int? // null = OFF
+  transferIfOffline       Boolean @default(false)
+  
+  // Limits
+  unreadLimitPerUser Int? // null = OFF
+  
+  // Schedule
+  rotationSchedule String @default("ALWAYS") // ALWAYS, WORKING_HOURS
+  
+  // Access
+  nonSelectedCanViewAll Boolean @default(false)
+  assignToNonSelected   String? // "ASSIGN_TO_THEM"
+  
+  updatedAt DateTime @updatedAt
 }

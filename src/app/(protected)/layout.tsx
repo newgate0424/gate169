@@ -13,7 +13,7 @@ export default function AdManagerLayout({
     children: React.ReactNode;
 }) {
     const { data: session, status } = useSession();
-    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
 
     if (status === 'loading') {
         return <div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>;
@@ -24,14 +24,18 @@ export default function AdManagerLayout({
     }
 
     return (
-        <div className="min-h-screen bg-[#F0F9FF] flex flex-col">
-            <Header user={session.user} onLogout={() => signOut({ callbackUrl: '/' })} />
-            <div className="flex flex-1 overflow-hidden">
+        <div className="h-screen bg-[#F0F9FF] flex flex-col overflow-hidden">
+            <Header
+                user={session.user}
+                onLogout={() => signOut({ callbackUrl: '/' })}
+                onToggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            />
+            <div className="flex flex-1 overflow-hidden relative">
                 <Sidebar
                     isCollapsed={isSidebarCollapsed}
                     toggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
                 />
-                <main className="flex-1 overflow-y-auto p-8">
+                <main className="flex-1 overflow-y-auto">
                     {children}
                 </main>
             </div>

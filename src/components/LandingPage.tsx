@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, BarChart2, Zap, Shield, CheckCircle } from 'lucide-react';
 
@@ -25,19 +26,21 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
                     <a href="#about" className="hover:text-blue-600 transition-colors">About</a>
                 </nav>
                 <div className="flex items-center gap-4">
-                    <Button
-                        variant="ghost"
-                        className="text-gray-600 hover:text-blue-600 font-medium"
-                        onClick={() => onLogin('google')}
-                    >
-                        Sign In
-                    </Button>
-                    <Button
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 shadow-lg shadow-blue-200"
-                        onClick={() => onLogin('google')}
-                    >
-                        Get Started
-                    </Button>
+                    <Link href="/login">
+                        <Button
+                            variant="ghost"
+                            className="text-gray-600 hover:text-blue-600 font-medium"
+                        >
+                            Sign In
+                        </Button>
+                    </Link>
+                    <Link href="/register">
+                        <Button
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 shadow-lg shadow-blue-200"
+                        >
+                            Get Started
+                        </Button>
+                    </Link>
                 </div>
             </header>
 
@@ -63,13 +66,14 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
                     </p>
 
                     <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-                        <Button
-                            className="h-14 px-8 text-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xl shadow-blue-200 transition-all hover:scale-105"
-                            onClick={() => onLogin('google')}
-                        >
-                            Start Free Trial
-                            <ArrowRight className="ml-2 h-5 w-5" />
-                        </Button>
+                        <Link href="/register">
+                            <Button
+                                className="h-14 px-8 text-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xl shadow-blue-200 transition-all hover:scale-105"
+                            >
+                                Start Free Trial
+                                <ArrowRight className="ml-2 h-5 w-5" />
+                            </Button>
+                        </Link>
                         <Button
                             variant="outline"
                             className="h-14 px-8 text-lg border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-gray-900"

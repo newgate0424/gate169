@@ -192,37 +192,31 @@ export const updateAdStatus = async (accessToken: string, adId: string, status: 
 };
 
 export const getPages = async (accessToken: string) => {
-    const api = initFacebookApi(accessToken);
     try {
-        const me = await (new FacebookAdsApi(accessToken)).call('GET', ['me', 'accounts'], {
-            fields: 'name,id,access_token,picture{url},tasks',
-            limit: 500 // Fetch up to 500 pages to ensure we get them all before filtering
-        });
+        let allPages: any[] = [];
+        let nextUrl = `https://graph.facebook.com/v18.0/me/accounts?fields=name,id,access_token,picture{url},tasks&limit=100&access_token=${accessToken}`;
 
-        // Filter pages where user has meaningful access
-        // Common tasks: 'ANALYZE', 'ADVERTISE', 'MODERATE', 'CREATE_CONTENT', 'MANAGE'
-        const relevantTasks = ['ADVERTISE', 'MODERATE', 'CREATE_CONTENT', 'MANAGE'];
+        // Fetch all pages with pagination
+        while (nextUrl) {
+            const response = await fetch(nextUrl);
+            const data = await response.json();
 
-        console.log(`Fetched ${me.data.length} pages from API`);
+            if (data.error) {
+                throw new Error(data.error.message);
+            }
 
-        // Log the first few pages to see their tasks for debugging
-        if (me.data.length > 0) {
-            console.log("Sample page tasks:", JSON.stringify(me.data.slice(0, 3).map((p: any) => ({ name: p.name, tasks: p.tasks })), null, 2));
+            if (data.data) {
+                allPages = [...allPages, ...data.data];
+            }
+
+            // Check for next page
+            nextUrl = data.paging?.next || null;
         }
 
-        // TEMPORARILY DISABLED FILTERING to debug missing pages
-        /*
-        const filteredPages = me.data.filter((page: any) => {
-            if (!page.tasks) return false;
-            return page.tasks.some((task: string) => relevantTasks.includes(task));
-        });
-        */
-        const filteredPages = me.data;
+        console.log(`[getPages] Fetched ${allPages.length} pages total (with pagination)`);
+        console.log(`[getPages] Page list:`, allPages.map(p => `${p.name} (${p.id})`).join(', '));
 
-        return filteredPages;
-
-        console.log(`Filtered pages from ${me.data.length} to ${filteredPages.length}`);
-        return filteredPages;
+        return allPages;
     } catch (error) {
         console.error('Error fetching pages:', error);
         throw error;
@@ -241,14 +235,60 @@ export const getPageConversations = async (userAccessToken: string, pageId: stri
             token = page.access_token;
         }
 
-        // Now use the page access token to fetch conversations
-        const pageApi = FacebookAdsApi.init(token);
-        const conversations = await pageApi.call('GET', [pageId, 'conversations'], {
-            fields: 'snippet,updated_time,participants,message_count,unread_count',
-            platform: 'messenger' // or instagram
-        });
+        // Fetch all conversations with pagination
+        // Include 'link' field which contains ad referral info
+        let allConversations: any[] = [];
+        // Request participants with additional fields to try to get profile link
+        let url = `https://graph.facebook.com/v18.0/${pageId}/conversations?fields=snippet,updated_time,participants{id,name,email,username,link},message_count,unread_count,link&platform=messenger&limit=100&access_token=${token}`;
 
-        return conversations.data;
+        let pageCount = 0;
+        const maxPages = 10; // Max 1000 conversations
+
+        while (url && pageCount < maxPages) {
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.error) {
+                console.error('Error fetching conversations:', data.error);
+                break;
+            }
+
+            if (data.data && data.data.length > 0) {
+                // Log first conversation to debug participants - detailed view
+                if (pageCount === 0 && data.data[0]) {
+                    console.log('[getPageConversations] First conversation FULL data:', JSON.stringify(data.data[0], null, 2));
+                }
+
+                // Process each conversation to extract ad_id from link if present
+                const processedConvs = data.data.map((conv: any) => {
+                    let adId = null;
+
+                    // Check if link contains ad referral info
+                    // Format: https://www.facebook.com/xxx?ad_id=120210157734360786
+                    if (conv.link) {
+                        const adIdMatch = conv.link.match(/ad_id=(\d+)/);
+                        if (adIdMatch) {
+                            adId = adIdMatch[1];
+                            console.log(`[getPageConversations] Found ad_id in link: ${adId}`);
+                        }
+                    }
+
+                    return {
+                        ...conv,
+                        ad_id: adId
+                    };
+                });
+
+                allConversations = allConversations.concat(processedConvs);
+            }
+
+            // Check for next page
+            url = data.paging?.next || null;
+            pageCount++;
+        }
+
+        console.log(`Fetched ${allConversations.length} conversations for page ${pageId}`);
+        return allConversations;
     } catch (error) {
         console.error('Error fetching conversations:', error);
         throw error;
@@ -270,19 +310,36 @@ export const getConversationMessages = async (userAccessToken: string, conversat
             token = page.access_token;
         }
 
-        const pageApi = FacebookAdsApi.init(token);
-        const messages = await pageApi.call('GET', [conversationId, 'messages'], {
-            fields: 'message,from,created_time,attachments,sticker',
-            limit: 50 // Fetch last 50 messages
-        });
+        // Use fetch for pagination support
+        let allMessages: any[] = [];
+        let url = `https://graph.facebook.com/v18.0/${conversationId}/messages?fields=message,from,created_time,attachments,sticker&limit=100&access_token=${token}`;
 
-        if (!messages || !messages.data) {
-            console.warn(`No messages data found for conversation ${conversationId}`);
-            return [];
+        // Fetch all messages with pagination (max 500 to prevent infinite loops)
+        let pageCount = 0;
+        const maxPages = 10; // Max 1000 messages
+
+        while (url && pageCount < maxPages) {
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.error) {
+                console.error('Error fetching messages:', data.error);
+                break;
+            }
+
+            if (data.data && data.data.length > 0) {
+                allMessages = allMessages.concat(data.data);
+            }
+
+            // Check for next page
+            url = data.paging?.next || null;
+            pageCount++;
         }
 
+        console.log(`Fetched ${allMessages.length} messages for conversation ${conversationId}`);
+
         // Reverse to show oldest first (standard chat UI)
-        return messages.data.reverse();
+        return allMessages.reverse();
     } catch (error) {
         console.error('Error fetching messages:', error);
         throw error;

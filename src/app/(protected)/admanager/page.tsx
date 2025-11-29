@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { ConnectPlatform } from '@/components/ConnectPlatform';
 import { AdsTable, AdData } from '@/components/AdsTable';
@@ -8,7 +8,16 @@ import { fetchAdAccounts, fetchAdData, saveFacebookToken } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { DatePickerWithRange } from '@/components/DateRangePicker';
 import { DateRange } from 'react-day-picker';
-import { RefreshCw, Loader2 } from 'lucide-react';
+import { RefreshCw, Loader2, Database } from 'lucide-react';
+
+// Cache structure
+interface CacheEntry {
+    data: AdData[];
+    timestamp: number;
+    dateRange?: string;
+}
+
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
 
 export default function AdManagerPage() {
     const { data: session } = useSession();
@@ -16,9 +25,18 @@ export default function AdManagerPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [date, setDate] = useState<DateRange | undefined>(undefined);
+    const [fromCache, setFromCache] = useState(false);
+    
+    // Cache ref to persist across renders
+    const cacheRef = useRef<Map<string, CacheEntry>>(new Map());
 
     // @ts-ignore
     const facebookToken = session?.user?.facebookAccessToken;
+
+    const getCacheKey = (dateRange?: DateRange) => {
+        if (!dateRange?.from || !dateRange?.to) return 'all-time';
+        return `${dateRange.from.toISOString()}_${dateRange.to.toISOString()}`;
+    };
 
     const handleFacebookConnect = async (token: string) => {
         try {
@@ -30,12 +48,24 @@ export default function AdManagerPage() {
         }
     };
 
-    const loadAllData = async () => {
+    const loadAllData = async (forceRefresh = false) => {
         if (!facebookToken) return;
+
+        const cacheKey = getCacheKey(date);
+        const cached = cacheRef.current.get(cacheKey);
+        
+        // Use cache if valid and not forcing refresh
+        if (!forceRefresh && cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+            console.log('📦 Using cached data');
+            setAdsData(cached.data);
+            setFromCache(true);
+            return;
+        }
 
         setLoading(true);
         setError(null);
         setAdsData([]);
+        setFromCache(false);
 
         try {
             const accounts = await fetchAdAccounts(facebookToken);
@@ -64,6 +94,13 @@ export default function AdManagerPage() {
             const allAds = results
                 .filter((result): result is PromiseFulfilledResult<any[]> => result.status === 'fulfilled')
                 .flatMap(result => result.value);
+
+            // Save to cache
+            cacheRef.current.set(cacheKey, {
+                data: allAds,
+                timestamp: Date.now(),
+                dateRange: cacheKey
+            });
 
             setAdsData(allAds);
         } catch (err: any) {
@@ -95,14 +132,23 @@ export default function AdManagerPage() {
     return (
         <div className="w-full max-w-[95%] mx-auto">
             <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold text-gray-800">Ad Manager</h1>
+                <div className="flex items-center gap-2">
+                    <h1 className="text-2xl font-bold text-gray-800">Ad Manager</h1>
+                    {fromCache && (
+                        <span className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                            <Database className="h-3 w-3" />
+                            Cached
+                        </span>
+                    )}
+                </div>
                 <div className="flex items-center gap-4">
                     <Button
                         variant="outline"
                         size="icon"
-                        onClick={loadAllData}
+                        onClick={() => loadAllData(true)}
                         disabled={loading}
                         className="bg-white border-gray-200 hover:bg-gray-50"
+                        title="Force refresh from API"
                     >
                         <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                     </Button>

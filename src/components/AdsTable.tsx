@@ -108,6 +108,17 @@ export function AdsTable({ data, accessToken, user }: { data: AdData[], accessTo
 
     const columns = React.useMemo<ColumnDef<AdData>[]>(() => [
         {
+            id: "index",
+            header: "#",
+            cell: ({ row }) => (
+                <div className="text-center text-gray-500 w-[30px]">
+                    {row.index + 1}
+                </div>
+            ),
+            enableSorting: false,
+            enableHiding: false,
+        },
+        {
             id: "select",
             header: ({ table }) => (
                 <Checkbox
