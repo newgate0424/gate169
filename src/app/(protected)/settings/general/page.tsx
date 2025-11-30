@@ -13,10 +13,12 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Save } from 'lucide-react';
+import { useAppSettings } from '@/hooks/useAppSettings';
 
 export default function GeneralSettingsPage() {
+    const { notificationsEnabled, soundEnabled, setNotificationsEnabled, setSoundEnabled } = useAppSettings();
     return (
-        <div className="flex flex-col h-full px-[100px] py-6 space-y-6">
+        <div className="flex flex-col h-full px-4 md:px-8 py-6 space-y-6">
             {/* Header Section */}
             <div className="flex-shrink-0">
                 <div className="flex items-center justify-between mb-6">
@@ -34,7 +36,7 @@ export default function GeneralSettingsPage() {
             {/* Content Section */}
             <div className="flex-1 overflow-hidden border rounded-xl shadow-sm bg-white">
                 <div className="h-full overflow-y-auto p-8 space-y-8">
-                    
+
                     {/* Store Information */}
                     <div className="space-y-4">
                         <div>
@@ -129,14 +131,20 @@ export default function GeneralSettingsPage() {
                                     <Label className="text-base">แจ้งเตือนลูกค้าใหม่</Label>
                                     <p className="text-sm text-gray-500">แจ้งเตือนทันทีเมื่อมีลูกค้าทักแชทหรือคอมเมนต์ใหม่</p>
                                 </div>
-                                <Switch defaultChecked />
+                                <Switch
+                                    checked={notificationsEnabled}
+                                    onCheckedChange={setNotificationsEnabled}
+                                />
                             </div>
                             <div className="flex items-center justify-between p-4 border rounded-lg bg-gray-50/50">
                                 <div className="space-y-0.5">
                                     <Label className="text-base">เสียงแจ้งเตือน</Label>
                                     <p className="text-sm text-gray-500">เล่นเสียงเมื่อมีข้อความเข้าขณะเปิดหน้าจอค้างไว้</p>
                                 </div>
-                                <Switch />
+                                <Switch
+                                    checked={soundEnabled}
+                                    onCheckedChange={setSoundEnabled}
+                                />
                             </div>
                         </div>
                     </div>

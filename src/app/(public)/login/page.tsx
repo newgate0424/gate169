@@ -1,23 +1,48 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Mail, Lock, Chrome } from 'lucide-react';
+import { Loader2, Mail, Lock } from 'lucide-react';
+import { GoogleIcon } from '@/components/ui/google-icon';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function LoginPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const { toast } = useToast();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [formData, setFormData] = useState({
         email: '',
         password: '',
     });
+
+    useEffect(() => {
+        const errorParam = searchParams.get('error');
+        if (errorParam) {
+            let description = "เกิดข้อผิดพลาดในการเข้าสู่ระบบ";
+            if (errorParam === 'OAuthAccountNotLinked') {
+                description = "อีเมลนี้ถูกใช้งานแล้วด้วยวิธีอื่น กรุณาเข้าสู่ระบบด้วยรหัสผ่านหรือบัญชีเดิมที่เคยเชื่อมต่อ";
+            } else if (errorParam === 'CredentialsSignin') {
+                description = "อีเมลหรือรหัสผ่านไม่ถูกต้อง";
+            }
+
+            toast({
+                title: "เข้าสู่ระบบล้มเหลว",
+                description: description,
+                variant: "destructive",
+            });
+
+            // Clear error from URL
+            router.replace('/login');
+        }
+    }, [searchParams, toast, router]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -124,7 +149,7 @@ export default function LoginPage() {
                         className="w-full"
                         onClick={handleGoogleSignIn}
                     >
-                        <Chrome className="mr-2 h-4 w-4" />
+                        <GoogleIcon className="mr-2 h-4 w-4" />
                         ลงชื่อเข้าใช้ด้วย Google
                     </Button>
                 </CardContent>

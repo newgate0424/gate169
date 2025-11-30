@@ -21,13 +21,13 @@ async function getPageToken(pageId: string, userAccessToken: string): Promise<st
     if (cached && Date.now() - cached.timestamp < TOKEN_CACHE_DURATION) {
         return cached.token;
     }
-    
+
     try {
         const pageResponse = await fetch(
             `https://graph.facebook.com/v18.0/${pageId}?fields=access_token&access_token=${userAccessToken}`
         );
         const pageData = await pageResponse.json();
-        
+
         if (pageData.access_token) {
             pageTokenCache.set(pageId, {
                 token: pageData.access_token,
@@ -86,16 +86,16 @@ export async function GET(req: NextRequest) {
         const dbUser = await prisma.user.findUnique({
             // @ts-ignore
             where: { id: session.user.id },
-            select: { facebookAccessToken: true }
+            select: { facebookPageToken: true }
         });
 
-        if (!dbUser?.facebookAccessToken) {
+        if (!dbUser?.facebookPageToken) {
             return NextResponse.redirect(getFallbackUrl());
         }
 
         // Get Page Access Token (cached)
-        const pageToken = await getPageToken(pageId, dbUser.facebookAccessToken);
-        
+        const pageToken = await getPageToken(pageId, dbUser.facebookPageToken);
+
         if (!pageToken) {
             console.log('[ProfilePic] No page access token for page:', pageId);
             return NextResponse.redirect(getFallbackUrl());
@@ -104,9 +104,9 @@ export async function GET(req: NextRequest) {
         // Fetch profile picture as binary (follow redirects)
         const pictureUrl = `https://graph.facebook.com/${userId}/picture?type=${size}&access_token=${pageToken}`;
         console.log('[ProfilePic] Fetching:', pictureUrl.substring(0, 80) + '...');
-        
+
         const pictureResponse = await fetch(pictureUrl, { redirect: 'follow' });
-        
+
         if (!pictureResponse.ok) {
             // Try to get error message
             const errorText = await pictureResponse.text();

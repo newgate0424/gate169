@@ -26,11 +26,11 @@ async function getPageAccessToken(pageId: string): Promise<string | null> {
         const users = await db.findUsersWithFacebookToken();
 
         for (const user of users) {
-            if (!user.facebookAccessToken) continue;
+            if (!user.facebookPageToken) continue;
 
             // Try to get page token from this user
             const response = await fetch(
-                `https://graph.facebook.com/v18.0/${pageId}?fields=access_token&access_token=${user.facebookAccessToken}`
+                `https://graph.facebook.com/v18.0/${pageId}?fields=access_token&access_token=${user.facebookPageToken}`
             );
             const data = await response.json();
 

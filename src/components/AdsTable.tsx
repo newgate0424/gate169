@@ -32,7 +32,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { ArrowUpDown, Search, Filter, LayoutGrid } from 'lucide-react';
-import { updateAdStatusAction, saveFacebookToken } from '@/app/actions';
+import { updateAdStatusAction, saveFacebookAdToken } from '@/app/actions';
 import { ConnectModal } from '@/components/ConnectModal';
 
 export type AdData = {
@@ -98,7 +98,7 @@ export function AdsTable({ data, accessToken, user }: { data: AdData[], accessTo
 
     const handleConnect = async (token: string) => {
         try {
-            await saveFacebookToken(token);
+            await saveFacebookAdToken(token);
             window.location.reload();
         } catch (e) {
             console.error("Failed to save token", e);

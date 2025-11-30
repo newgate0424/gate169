@@ -15,12 +15,12 @@ import { Moon, Sun, Monitor, LayoutTemplate, List, Save } from 'lucide-react';
 
 export default function DisplaySettingsPage() {
     return (
-        <div className="flex flex-col h-full px-[100px] py-6 space-y-6">
+        <div className="flex flex-col h-full px-4 md:px-8 py-6 space-y-6">
             {/* Header Section */}
             <div className="flex-shrink-0">
                 <div className="flex items-center justify-between mb-6">
                     <div>
-                        <h2 className="text-2xl font-bold tracking-tight text-gray-900">หน่วยแสดงผล</h2>
+                        <h2 className="text-2xl font-bold tracking-tight text-gray-900">การแสดงผล</h2>
                         <p className="text-sm text-gray-500 mt-1">ปรับแต่งหน้าตาการใช้งานและธีมของระบบ</p>
                     </div>
                     <Button className="gap-2">

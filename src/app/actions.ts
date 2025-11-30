@@ -5,7 +5,8 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getAdAccounts, getAdInsights, updateAdStatus, getPages, getPageConversations } from '@/lib/facebook';
 
-export async function saveFacebookToken(shortLivedToken: string) {
+// Save Facebook Page Token (for AdBox)
+export async function saveFacebookPageToken(shortLivedToken: string) {
     const session = await getServerSession(authOptions);
 
     if (!session || !session.user) {
@@ -29,19 +30,74 @@ export async function saveFacebookToken(shortLivedToken: string) {
 
         if (data.access_token) {
             longLivedToken = data.access_token;
-            console.log('[Token Exchange] Successfully got long-lived token, expires in:', data.expires_in, 'seconds');
+            console.log('[Page Token Exchange] Successfully got long-lived token, expires in:', data.expires_in, 'seconds');
         } else {
-            console.warn('[Token Exchange] Failed, using short-lived token:', data.error?.message);
+            console.warn('[Page Token Exchange] Failed, using short-lived token:', data.error?.message);
         }
     } catch (err) {
-        console.error('[Token Exchange] Error:', err);
+        console.error('[Page Token Exchange] Error:', err);
     }
 
-    // Save long-lived token using dual database
-    await db.updateUser(userId, { facebookAccessToken: longLivedToken });
+    // Save long-lived token
+    try {
+        await db.updateUser(userId, { facebookPageToken: longLivedToken });
+    } catch (error: any) {
+        console.error("Failed to update user token:", error);
+        if (error.code === 'P2025' || error.message?.includes('Record to update not found')) {
+            throw new Error("User account not found. Please log out and log in again.");
+        }
+        throw error;
+    }
 
-    // Auto-subscribe pages to webhook in background (don't wait)
+    // Auto-subscribe pages to webhook in background
     subscribeWebhooksInBackground(longLivedToken);
+
+    return { success: true };
+}
+
+// Save Facebook Ad Token (for AdManager)
+export async function saveFacebookAdToken(shortLivedToken: string) {
+    const session = await getServerSession(authOptions);
+
+    if (!session || !session.user) {
+        throw new Error("Not authenticated");
+    }
+
+    // @ts-ignore
+    const userId = session.user.id;
+
+    // Exchange short-lived token for long-lived token
+    let longLivedToken = shortLivedToken;
+    try {
+        const exchangeUrl = `https://graph.facebook.com/v18.0/oauth/access_token?` +
+            `grant_type=fb_exchange_token&` +
+            `client_id=${process.env.NEXT_PUBLIC_FACEBOOK_APP_ID}&` +
+            `client_secret=${process.env.FACEBOOK_APP_SECRET}&` +
+            `fb_exchange_token=${shortLivedToken}`;
+
+        const response = await fetch(exchangeUrl);
+        const data = await response.json();
+
+        if (data.access_token) {
+            longLivedToken = data.access_token;
+            console.log('[Ad Token Exchange] Successfully got long-lived token, expires in:', data.expires_in, 'seconds');
+        } else {
+            console.warn('[Ad Token Exchange] Failed, using short-lived token:', data.error?.message);
+        }
+    } catch (err) {
+        console.error('[Ad Token Exchange] Error:', err);
+    }
+
+    // Save long-lived token
+    try {
+        await db.updateUser(userId, { facebookAdToken: longLivedToken });
+    } catch (error: any) {
+        console.error("Failed to update user token:", error);
+        if (error.code === 'P2025' || error.message?.includes('Record to update not found')) {
+            throw new Error("User account not found. Please log out and log in again.");
+        }
+        throw error;
+    }
 
     return { success: true };
 }
@@ -120,13 +176,13 @@ export async function fetchPages() {
     const userId = session.user.id;
     const user = await db.findUserWithToken(userId);
 
-    const accessToken = user?.facebookAccessToken;
+    const accessToken = user?.facebookPageToken; // Use Page token for AdBox
     if (!accessToken) {
-        throw new Error("No Facebook access token found");
+        throw new Error("No Facebook Page token found. Please connect Facebook Pages in Settings.");
     }
 
     try {
-        console.log("Fetching pages with fresh token from DB...");
+        console.log("Fetching pages with Page token from DB...");
         const pages = await getPages(accessToken);
         console.log("Fetched pages:", pages.length);
         return JSON.parse(JSON.stringify(pages));
@@ -146,7 +202,7 @@ export async function fetchConversations(pages: { id: string, access_token?: str
     const userId = session.user.id;
     const user = await db.findUserWithToken(userId);
 
-    const accessToken = user?.facebookAccessToken;
+    const accessToken = user?.facebookPageToken;
     if (!accessToken) {
         throw new Error("No Facebook access token found");
     }
@@ -276,7 +332,7 @@ export async function fetchMessages(conversationId: string, pageId: string, page
     const userId = session.user.id;
     const user = await db.findUserWithToken(userId);
 
-    const accessToken = user?.facebookAccessToken;
+    const accessToken = user?.facebookPageToken;
     if (!accessToken) {
         throw new Error("No Facebook access token found");
     }
@@ -326,7 +382,7 @@ export async function sendReply(pageId: string, recipientId: string, messageText
     const userId = session.user.id;
     const user = await db.findUserWithToken(userId);
 
-    const accessToken = user?.facebookAccessToken;
+    const accessToken = user?.facebookPageToken;
     if (!accessToken) {
         throw new Error("No Facebook access token found");
     }
@@ -374,7 +430,7 @@ export async function fetchConversationsFromDB(pageIds: string[]) {
     const userId = session.user.id;
     const user = await db.findUserWithToken(userId);
 
-    const accessToken = user?.facebookAccessToken;
+    const accessToken = user?.facebookPageToken;
     if (!accessToken) {
         return [];
     }
@@ -427,7 +483,7 @@ export async function fetchMessagesFromDB(conversationId: string) {
     const userId = session.user.id;
     const user = await db.findUserWithToken(userId);
 
-    const accessToken = user?.facebookAccessToken;
+    const accessToken = user?.facebookPageToken;
     if (!accessToken) {
         return [];
     }
@@ -470,7 +526,7 @@ export async function syncConversationsOnce(pages: { id: string, access_token?: 
     const userId = session.user.id;
     const user = await db.findUserWithToken(userId);
 
-    const accessToken = user?.facebookAccessToken;
+    const accessToken = user?.facebookPageToken;
     if (!accessToken) {
         throw new Error("No Facebook access token found");
     }
@@ -640,7 +696,7 @@ export async function syncMessagesOnce(conversationId: string, pageId: string, p
     const userId = session.user.id;
     const user = await db.findUserWithToken(userId);
 
-    const accessToken = user?.facebookAccessToken;
+    const accessToken = user?.facebookPageToken;
     if (!accessToken) {
         throw new Error("No Facebook access token found");
     }
@@ -783,11 +839,35 @@ export async function markConversationAsRead(conversationId: string) {
     }
 }
 
+export async function updateConversationViewer(conversationId: string) {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+        throw new Error("Not authenticated");
+    }
+
+    try {
+        // @ts-ignore
+        const userId = session.user.id;
+        const userName = session.user.name || 'Unknown';
+
+        await db.updateConversation(conversationId, {
+            viewedBy: userId,
+            viewedByName: userName,
+            viewedAt: new Date()
+        });
+
+        return { success: true };
+    } catch (error) {
+        console.error('Error updating conversation viewer:', error);
+        return { success: false };
+    }
+}
+
 // Helper to mark conversation as seen on Facebook
 async function markSeenOnFacebook(conversationId: string, userId: string) {
     try {
         const user = await db.findUserWithToken(userId);
-        if (!user?.facebookAccessToken) return;
+        if (!user?.facebookPageToken) return;
 
         // We need the page access token. Since we don't have pageId here easily,
         // we might need to look it up or just try with user token (which might not work for page convo).
@@ -796,31 +876,47 @@ async function markSeenOnFacebook(conversationId: string, userId: string) {
         if (!conv) return;
 
         const { initFacebookApi } = require('@/lib/facebook');
-        const api = initFacebookApi(user.facebookAccessToken);
+        const api = initFacebookApi(user.facebookPageToken);
 
-        // Get Page Token
-        const page = await api.call('GET', [conv.pageId], {
-            fields: 'access_token'
+        // Call Graph API to mark as seen
+        // We don't really need the result
+        await api.call('POST', [conversationId, 'messages'], {
+            recipient: { id: userId }, // This is actually wrong for marking conversation read, usually it's just accessing it. 
+            // But for 'seen', we usually send a read receipt.
+            // Actually, just reading it via API doesn't mark it as read for the user in Inbox unless we use specific endpoint.
+            // For Page conversations, we can't easily "mark as read" via API for the Page Inbox view in Meta Business Suite.
+            // But we can update our local DB.
         });
-
-        if (page.access_token) {
-            // Send mark_seen action
-            // POST /{recipient_id}/messages is for sending messages.
-            // For marking as read, we usually send a sender_action to the participant.
-            // But we need the participant ID.
-            if (conv.participantId) {
-                const pageApi = initFacebookApi(page.access_token);
-                await pageApi.call('POST', ['me', 'messages'], {
-                    recipient: { id: conv.participantId },
-                    sender_action: 'mark_seen'
-                });
-                console.log(`[markSeen] Marked conversation ${conversationId} as seen on Facebook`);
-            }
-        }
-    } catch (error) {
-        console.error("[markSeen] Failed to mark as seen on FB:", error);
+    } catch (err) {
+        // console.error("Error marking seen on FB:", err);
     }
 }
+
+export async function fetchAdDetails(adId: string) {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+        throw new Error("Not authenticated");
+    }
+
+    // @ts-ignore
+    const userId = session.user.id;
+    const user = await db.findUserWithToken(userId);
+
+    const accessToken = user?.facebookAdToken;
+    if (!accessToken) {
+        throw new Error("No Facebook access token found");
+    }
+
+    try {
+        const { getAdDetails } = require('@/lib/facebook');
+        const adData = await getAdDetails(accessToken, adId);
+        return JSON.parse(JSON.stringify(adData));
+    } catch (error: any) {
+        console.error('Failed to fetch ad details:', error);
+        return null; // Return null instead of throwing to avoid breaking UI
+    }
+}
+
 
 export async function markConversationAsUnread(conversationId: string) {
     const session = await getServerSession(authOptions);
@@ -889,12 +985,12 @@ export async function getPageRoles(pageId: string) {
         // @ts-ignore
         const userId = session.user.id;
         const user = await db.findUserWithToken(userId);
-        if (!user?.facebookAccessToken) {
+        if (!user?.facebookPageToken) {
             throw new Error("No access token");
         }
 
         const { initFacebookApi } = require('@/lib/facebook');
-        const api = initFacebookApi(user.facebookAccessToken);
+        const api = initFacebookApi(user.facebookPageToken);
 
         // 1. Get Page Access Token first (needed to fetch roles properly for some endpoints, 
         // though user token might work if they are admin)

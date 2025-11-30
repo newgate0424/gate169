@@ -20,6 +20,8 @@ model Account {
   scope              String?
   id_token           String?  @db.Text
   session_state      String?
+  providerEmail      String?
+  providerImage      String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -47,9 +49,10 @@ model User {
   username      String?   @unique
   password      String?   @db.Text
   
-  // Custom field for Facebook Access Token
-  facebookAccessToken String? @db.Text
-  permissions         String? @db.Text // JSON: { canDownload: true, canManage: false, ... }
+  // Facebook Tokens - Separated by use case
+  facebookPageToken String? @db.Text // For AdBox (pages, messaging)
+  facebookAdToken   String? @db.Text // For AdManager (ads, insights)
+  permissions       String? @db.Text // JSON: { canDownload: true, canManage: false, ... }
 }
 
 model VerificationToken {
@@ -78,6 +81,11 @@ model Conversation {
   adName          String?   // ชื่อโฆษณา (ถ้ามี)
   
   assigneeId      String?   // ID of the staff assigned to this chat
+  
+  // Viewer tracking - who last viewed this conversation
+  viewedBy        String?   // User ID who last viewed
+  viewedByName    String?   // User name for quick display
+  viewedAt        DateTime? // When it was last viewed
   
   messages     Message[]
   

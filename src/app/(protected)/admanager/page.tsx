@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { ConnectPlatform } from '@/components/ConnectPlatform';
 import { AdsTable, AdData } from '@/components/AdsTable';
-import { fetchAdAccounts, fetchAdData, saveFacebookToken } from '@/app/actions';
+import { fetchAdAccounts, fetchAdData, saveFacebookAdToken } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { DatePickerWithRange } from '@/components/DateRangePicker';
 import { DateRange } from 'react-day-picker';
@@ -26,12 +26,12 @@ export default function AdManagerPage() {
     const [error, setError] = useState<string | null>(null);
     const [date, setDate] = useState<DateRange | undefined>(undefined);
     const [fromCache, setFromCache] = useState(false);
-    
+
     // Cache ref to persist across renders
     const cacheRef = useRef<Map<string, CacheEntry>>(new Map());
 
     // @ts-ignore
-    const facebookToken = session?.user?.facebookAccessToken;
+    const facebookToken = session?.user?.facebookAdToken; // Use Ad token for AdManager
 
     const getCacheKey = (dateRange?: DateRange) => {
         if (!dateRange?.from || !dateRange?.to) return 'all-time';
@@ -40,7 +40,7 @@ export default function AdManagerPage() {
 
     const handleFacebookConnect = async (token: string) => {
         try {
-            await saveFacebookToken(token);
+            await saveFacebookAdToken(token);
             window.location.reload();
         } catch (e) {
             console.error("Failed to save token", e);
@@ -53,7 +53,7 @@ export default function AdManagerPage() {
 
         const cacheKey = getCacheKey(date);
         const cached = cacheRef.current.get(cacheKey);
-        
+
         // Use cache if valid and not forcing refresh
         if (!forceRefresh && cached && Date.now() - cached.timestamp < CACHE_DURATION) {
             console.log('📦 Using cached data');
@@ -119,12 +119,27 @@ export default function AdManagerPage() {
 
     if (!facebookToken) {
         return (
-            <div className="flex flex-col items-center justify-center h-full">
-                <div className="text-center mb-8">
-                    <h2 className="text-3xl font-bold text-gray-900">Welcome, {session?.user?.name}!</h2>
-                    <p className="text-gray-500 mt-2">To get started, please connect your ad platform.</p>
+            <div className="w-full max-w-[95%] mx-auto">
+                <div className="flex justify-between items-center mb-6">
+                    <h1 className="text-2xl font-bold text-gray-800">Ad Manager</h1>
+                    <div className="flex items-center gap-4">
+                        <Button
+                            variant="outline"
+                            size="icon"
+                            disabled
+                            className="bg-white border-gray-200"
+                        >
+                            <RefreshCw className="h-4 w-4" />
+                        </Button>
+                        <div className="bg-white rounded-md border border-gray-200">
+                            <DatePickerWithRange date={date} setDate={setDate} className="border-0" />
+                        </div>
+                    </div>
                 </div>
-                <ConnectPlatform onLogin={handleFacebookConnect} user={session?.user} />
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    <AdsTable data={[]} accessToken="" user={session?.user} />
+                </div>
             </div>
         );
     }

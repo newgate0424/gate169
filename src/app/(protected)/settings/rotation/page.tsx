@@ -150,9 +150,9 @@ export default function ChatRotationPage() {
     const commentUsersCount = 0;
 
     return (
-        <div className="space-y-6 pb-20 px-[100px] pt-6">
+        <div className="space-y-6 pb-20 px-4 md:px-8 pt-6">
             <div>
-                <h2 className="text-2xl font-bold tracking-tight">ระบบการหมุนรอบแชท</h2>
+                <h2 className="text-2xl font-bold tracking-tight">ระบบกระจายแชท</h2>
                 <div className="mt-2 bg-blue-50 text-blue-700 p-3 rounded-md text-sm flex gap-2 items-start">
                     <Info className="h-5 w-5 shrink-0 mt-0.5" />
                     <p>การตั้งค่าด้านล่างนี้เป็นการตั้งค่าสำหรับเพจปัจจุบัน หากต้องการนำไปใช้กับเพจอื่น ให้กดปุ่ม Sync Settings</p>

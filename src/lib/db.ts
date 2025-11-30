@@ -34,7 +34,8 @@ const userSchema = new mongoose.Schema({
     email: { type: String, unique: true, sparse: true },
     emailVerified: Date,
     image: String,
-    facebookAccessToken: String,
+    facebookPageToken: String, // For AdBox
+    facebookAdToken: String,   // For AdManager
 }, { timestamps: true });
 
 const sessionSchema = new mongoose.Schema({
@@ -57,6 +58,8 @@ const accountSchema = new mongoose.Schema({
     scope: String,
     id_token: String,
     session_state: String,
+    providerEmail: String,
+    providerImage: String,
 }, { timestamps: true });
 
 const conversationSchema = new mongoose.Schema({
@@ -71,6 +74,10 @@ const conversationSchema = new mongoose.Schema({
     facebookLink: String,
     adId: String,
     adName: String,
+    assigneeId: String,
+    viewedBy: String,
+    viewedByName: String,
+    viewedAt: Date,
 }, { timestamps: true });
 
 const messageSchema = new mongoose.Schema({
@@ -297,12 +304,12 @@ export const db = {
         const mode = await getActiveDB();
         if (mode === 'mysql') {
             return prisma.user.findMany({
-                where: { facebookAccessToken: { not: null } },
-                select: { facebookAccessToken: true }
+                where: { facebookPageToken: { not: null } },
+                select: { facebookPageToken: true }
             });
         } else {
-            const users = await UserModel.find({ facebookAccessToken: { $ne: null } })
-                .select('facebookAccessToken')
+            const users = await UserModel.find({ facebookPageToken: { $ne: null } })
+                .select('facebookPageToken')
                 .lean();
             return users;
         }
@@ -600,10 +607,13 @@ export const db = {
         if (mode === 'mysql') {
             return prisma.user.findUnique({
                 where: { id: userId },
-                select: { facebookAccessToken: true }
+                select: {
+                    facebookPageToken: true,
+                    facebookAdToken: true
+                }
             });
         } else {
-            const user = await UserModel.findById(userId).select('facebookAccessToken').lean();
+            const user = await UserModel.findById(userId).select('facebookPageToken facebookAdToken').lean();
             return user;
         }
     },

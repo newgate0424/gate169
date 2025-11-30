@@ -21,15 +21,26 @@ interface HeaderProps {
     };
     onLogout: () => void;
     onToggleSidebar?: () => void;
+    onMobileMenuToggle?: () => void;
 }
 
-export function Header({ user, onLogout, onToggleSidebar }: HeaderProps) {
+export function Header({ user, onLogout, onToggleSidebar, onMobileMenuToggle }: HeaderProps) {
     const { language, setLanguage, t } = useLanguage();
 
     return (
         <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
             <div className="container mx-auto px-4 h-16 flex items-center justify-between max-w-full">
                 <div className="flex items-center gap-2 md:gap-4">
+                    {/* Mobile Menu Toggle */}
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="md:hidden text-gray-600"
+                        onClick={onMobileMenuToggle}
+                    >
+                        <MenuIcon className="h-6 w-6" />
+                    </Button>
+
                     {/* Logo */}
                     <Link href={user ? "/overview" : "/"} className="flex items-center gap-2">
                         <div className="bg-blue-500 text-white p-1 rounded-md">
@@ -62,7 +73,7 @@ export function Header({ user, onLogout, onToggleSidebar }: HeaderProps) {
                         <Link href="/admanager" className="hover:text-blue-500 flex items-center gap-2">
                             {t('header.admanager')}
                         </Link>
-                        <Link href="/settings/permissions" className="hover:text-blue-500 flex items-center gap-2">
+                        <Link href="/settings/general" className="hover:text-blue-500 flex items-center gap-2">
                             {t('header.settings')}
                         </Link>
                     </nav>

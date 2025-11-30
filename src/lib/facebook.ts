@@ -1,13 +1,12 @@
 import { FacebookAdsApi, AdAccount, Ad } from 'facebook-nodejs-business-sdk';
 
 export const initFacebookApi = (accessToken: string) => {
-    const api = FacebookAdsApi.init(accessToken);
-    return api;
+    return new FacebookAdsApi(accessToken);
 };
 
 export const getAdAccounts = async (accessToken: string) => {
-    initFacebookApi(accessToken);
-    const me = await (new FacebookAdsApi(accessToken)).call('GET', ['me', 'adaccounts'], {
+    const api = initFacebookApi(accessToken);
+    const me = await api.call('GET', ['me', 'adaccounts'], {
         fields: 'name,id,account_id,currency,account_status'
     });
     return me.data;
@@ -15,7 +14,8 @@ export const getAdAccounts = async (accessToken: string) => {
 
 export const getAdInsights = async (accessToken: string, adAccountId: string, dateRange?: { from: Date, to: Date }) => {
     const api = initFacebookApi(accessToken);
-    const account = new AdAccount(adAccountId);
+    // Pass api instance to AdAccount (id, fields, method, api)
+    const account = new AdAccount(adAccountId, undefined, undefined, api);
 
     const adFields = [
         'name',
@@ -81,17 +81,12 @@ export const getAdInsights = async (accessToken: string, adAccountId: string, da
         if (pageIds.size > 0) {
             try {
                 // Batch request for pages
-                // We can't use 'ids' param directly on root in SDK easily without raw call, 
-                // but we can loop or use ?ids=...
-                // Using raw call for simplicity and batching
                 const idsArray = Array.from(pageIds);
-                // Split into chunks of 50 to avoid limits if necessary, but for now assume < 50 pages
                 const pagesData = await api.call('GET', [], {
                     ids: idsArray.join(','),
                     fields: 'name,username'
                 });
 
-                // pagesData is an object where keys are IDs
                 Object.keys(pagesData).forEach(id => {
                     pageNamesMap.set(id, pagesData[id]);
                 });
@@ -180,8 +175,8 @@ export const getAdInsights = async (accessToken: string, adAccountId: string, da
 };
 
 export const updateAdStatus = async (accessToken: string, adId: string, status: 'ACTIVE' | 'PAUSED') => {
-    initFacebookApi(accessToken);
-    const ad = new Ad(adId);
+    const api = initFacebookApi(accessToken);
+    const ad = new Ad(adId, undefined, undefined, api);
     try {
         const result = await ad.update([], { status: status });
         return result;
@@ -236,55 +231,87 @@ export const getPageConversations = async (userAccessToken: string, pageId: stri
         }
 
         // Fetch all conversations with pagination
-        // Include 'link' field which contains ad referral info
         let allConversations: any[] = [];
-        // Request participants with additional fields to try to get profile link
-        let url = `https://graph.facebook.com/v18.0/${pageId}/conversations?fields=snippet,updated_time,participants{id,name,email,username,link},message_count,unread_count,link&platform=messenger&limit=100&access_token=${token}`;
 
-        let pageCount = 0;
-        const maxPages = 10; // Max 1000 conversations
+        // Strategy: Try to fetch with 'labels' first to get Ad ID.
+        // If it fails with TOS error (2018344), fallback to fetching without 'labels'.
 
-        while (url && pageCount < maxPages) {
-            const response = await fetch(url);
-            const data = await response.json();
-
-            if (data.error) {
-                console.error('Error fetching conversations:', data.error);
-                break;
+        const fetchConversations = async (includeLabels: boolean) => {
+            let fields = 'snippet,updated_time,participants{id,name,email,username,link},message_count,unread_count,link';
+            if (includeLabels) {
+                fields += ',labels';
             }
 
-            if (data.data && data.data.length > 0) {
-                // Log first conversation to debug participants - detailed view
-                if (pageCount === 0 && data.data[0]) {
-                    console.log('[getPageConversations] First conversation FULL data:', JSON.stringify(data.data[0], null, 2));
+            let url = `https://graph.facebook.com/v18.0/${pageId}/conversations?fields=${fields}&platform=messenger&limit=20&access_token=${token}`;
+            let pageCount = 0;
+            const maxPages = 1;
+            let conversations: any[] = [];
+
+            while (url && pageCount < maxPages) {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.error) {
+                    // Check for Page Contact TOS error
+                    if (includeLabels && data.error.code === 2 && data.error.error_subcode === 2018344) {
+                        console.warn('[getPageConversations] Page Contact TOS not accepted. Retrying without labels.');
+                        throw new Error('TOS_REQUIRED');
+                    }
+                    console.error('Error fetching conversations:', data.error);
+                    break;
                 }
 
-                // Process each conversation to extract ad_id from link if present
-                const processedConvs = data.data.map((conv: any) => {
-                    let adId = null;
-
-                    // Check if link contains ad referral info
-                    // Format: https://www.facebook.com/xxx?ad_id=120210157734360786
-                    if (conv.link) {
-                        const adIdMatch = conv.link.match(/ad_id=(\d+)/);
-                        if (adIdMatch) {
-                            adId = adIdMatch[1];
-                            console.log(`[getPageConversations] Found ad_id in link: ${adId}`);
-                        }
+                if (data.data && data.data.length > 0) {
+                    if (pageCount === 0 && data.data[0]) {
+                        console.log('[getPageConversations] First conversation data:', JSON.stringify(data.data[0], null, 2));
                     }
 
-                    return {
-                        ...conv,
-                        ad_id: adId
-                    };
-                });
+                    const processedConvs = data.data.map((conv: any) => {
+                        let adId = null;
 
-                allConversations = allConversations.concat(processedConvs);
+                        // 1. Try to find ad_id in labels
+                        if (conv.labels && conv.labels.data) {
+                            const adLabel = conv.labels.data.find((l: any) => l.name && l.name.startsWith('ad_id.'));
+                            if (adLabel) {
+                                const parts = adLabel.name.split('.');
+                                if (parts.length > 1) {
+                                    adId = parts[1];
+                                }
+                            }
+                        }
+
+                        // 2. Fallback: Check link
+                        if (!adId && conv.link) {
+                            const adIdMatch = conv.link.match(/ad_id=(\d+)/);
+                            if (adIdMatch) {
+                                adId = adIdMatch[1];
+                            }
+                        }
+
+                        return {
+                            ...conv,
+                            ad_id: adId
+                        };
+                    });
+
+                    conversations = conversations.concat(processedConvs);
+                }
+
+                url = data.paging?.next || null;
+                pageCount++;
             }
+            return conversations;
+        };
 
-            // Check for next page
-            url = data.paging?.next || null;
-            pageCount++;
+        try {
+            allConversations = await fetchConversations(true);
+        } catch (error: any) {
+            if (error.message === 'TOS_REQUIRED') {
+                // Retry without labels
+                allConversations = await fetchConversations(false);
+            } else {
+                throw error;
+            }
         }
 
         console.log(`Fetched ${allConversations.length} conversations for page ${pageId}`);
@@ -312,11 +339,11 @@ export const getConversationMessages = async (userAccessToken: string, conversat
 
         // Use fetch for pagination support
         let allMessages: any[] = [];
-        let url = `https://graph.facebook.com/v18.0/${conversationId}/messages?fields=message,from,created_time,attachments,sticker&limit=100&access_token=${token}`;
+        let url = `https://graph.facebook.com/v18.0/${conversationId}/messages?fields=message,from,created_time,attachments,sticker&limit=20&access_token=${token}`;
 
         // Fetch all messages with pagination (max 500 to prevent infinite loops)
         let pageCount = 0;
-        const maxPages = 10; // Max 1000 messages
+        const maxPages = 1; // Optimize: Fetch only latest 20 messages
 
         while (url && pageCount < maxPages) {
             const response = await fetch(url);
@@ -355,7 +382,7 @@ export const sendMessage = async (userAccessToken: string, pageId: string, recip
         });
         const pageAccessToken = page.access_token;
 
-        const pageApi = FacebookAdsApi.init(pageAccessToken);
+        const pageApi = new FacebookAdsApi(pageAccessToken);
         // Send message via Graph API
         // Endpoint: /me/messages (which maps to /page_id/messages with page token)
         const response = await pageApi.call('POST', ['me', 'messages'], {
@@ -367,6 +394,35 @@ export const sendMessage = async (userAccessToken: string, pageId: string, recip
         return response;
     } catch (error) {
         console.error('Error sending message:', error);
+        throw error;
+    }
+};
+
+export const getAdDetails = async (accessToken: string, adId: string) => {
+    const api = initFacebookApi(accessToken);
+    try {
+        const ad = new Ad(adId, undefined, undefined, api);
+
+        // 1. Get Ad Basic Info & Creative
+        const adData = await ad.get([
+            'name',
+            'status',
+            'creative{thumbnail_url,image_url,title,body,object_story_spec}',
+            'preview_shareable_link'
+        ]);
+
+        // 2. Get Ad Insights (Lifetime)
+        const insights = await ad.getInsights(
+            ['impressions', 'clicks', 'spend', 'cpc', 'ctr', 'actions', 'reach'],
+            { date_preset: 'maximum' }
+        );
+
+        return {
+            ...adData,
+            insights: insights.length > 0 ? insights[0] : null
+        };
+    } catch (error) {
+        console.error('Error fetching ad details:', error);
         throw error;
     }
 };

@@ -13,6 +13,7 @@ interface ConnectPlatformProps {
         name?: string | null;
         image?: string | null;
     };
+    scopes?: string;
 }
 
 declare global {
@@ -22,7 +23,7 @@ declare global {
     }
 }
 
-export function ConnectPlatform({ onLogin, user }: ConnectPlatformProps) {
+export function ConnectPlatform({ onLogin, user, scopes }: ConnectPlatformProps) {
     const { t } = useLanguage();
     const [isSdkLoaded, setIsSdkLoaded] = useState(false);
     const [selectedPlatform, setSelectedPlatform] = useState('facebook');
@@ -66,7 +67,7 @@ export function ConnectPlatform({ onLogin, user }: ConnectPlatformProps) {
                 }
             },
             {
-                scope: 'ads_read,read_insights,ads_management,pages_show_list,pages_read_engagement,pages_manage_metadata,pages_messaging',
+                scope: scopes || 'ads_read,read_insights,ads_management,pages_show_list,pages_read_engagement,pages_manage_metadata,pages_messaging,business_management,pages_read_user_content',
                 auth_type: 'rerequest',
                 config_id: undefined,
                 enable_profile_selector: true

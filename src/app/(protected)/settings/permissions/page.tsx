@@ -56,7 +56,7 @@ const PERMISSION_GROUPS = [
             { id: 'manage_general', label: 'การตั้งค่าทั่วไป' },
             { id: 'manage_tags', label: 'การตั้งค่าแท็ก' },
             { id: 'manage_responses', label: 'การตั้งค่าสำหรับตอบกลับ' },
-            { id: 'manage_chat_rotation', label: 'ระบบการหมุนรอบแชท' },
+            { id: 'manage_chat_rotation', label: 'ระบบกระจายแชท' },
         ]
     },
     {
@@ -265,7 +265,7 @@ export default function PermissionsPage() {
     };
 
     return (
-        <div className="flex flex-col h-full px-[100px] py-6 space-y-6">
+        <div className="flex flex-col h-full px-4 md:px-8 py-6 space-y-6">
             {/* Header Section */}
             <div className="flex-shrink-0">
                 <div className="flex items-center justify-between mb-6">
@@ -310,57 +310,57 @@ export default function PermissionsPage() {
             <div className="flex-1 overflow-hidden border rounded-xl shadow-sm bg-white">
                 <div className="h-full overflow-auto">
                     <table className="w-full text-sm text-left border-collapse">
-                    <thead className="bg-gray-50/80 text-gray-600 font-medium sticky top-0 z-10 shadow-sm">
-                        {/* Group Headers */}
-                        <tr className="border-b border-gray-200">
-                            <th className="p-4 w-[250px] border-r border-gray-200 bg-gray-50/80 backdrop-blur-sm" rowSpan={2}>
-                                หน้าที่ของผู้ใช้งาน (พนักงาน)
-                            </th>
-                            {PERMISSION_GROUPS.map((group, idx) => (
-                                <th
-                                    key={idx}
-                                    colSpan={group.columns.length}
-                                    className="p-3 text-center border-r border-gray-200 last:border-r-0 font-semibold text-gray-700 bg-gray-50/80 backdrop-blur-sm"
-                                >
-                                    {group.name}
+                        <thead className="bg-gray-50/80 text-gray-600 font-medium sticky top-0 z-10 shadow-sm">
+                            {/* Group Headers */}
+                            <tr className="border-b border-gray-200">
+                                <th className="p-4 w-[250px] border-r border-gray-200 bg-gray-50/80 backdrop-blur-sm" rowSpan={2}>
+                                    หน้าที่ของผู้ใช้งาน (พนักงาน)
                                 </th>
-                            ))}
-                        </tr>
-                        {/* Column Headers */}
-                        <tr className="border-b border-gray-200">
-                            {ALL_PERMISSIONS.map((perm, idx) => {
-                                const isLastInGroup = PERMISSION_GROUPS.some(g => g.columns[g.columns.length - 1].id === perm.id);
-                                return (
+                                {PERMISSION_GROUPS.map((group, idx) => (
                                     <th
-                                        key={perm.id}
-                                        className={`p-2 text-center text-xs font-normal text-gray-500 bg-gray-50/80 backdrop-blur-sm break-words ${isLastInGroup ? 'border-r border-gray-200' : ''}`}
+                                        key={idx}
+                                        colSpan={group.columns.length}
+                                        className="p-3 text-center border-r border-gray-200 last:border-r-0 font-semibold text-gray-700 bg-gray-50/80 backdrop-blur-sm"
                                     >
-                                        {perm.label}
+                                        {group.name}
                                     </th>
-                                );
-                            })}
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                        {loading ? (
-                            <tr>
-                                <td colSpan={ALL_PERMISSIONS.length + 1} className="p-12 text-center text-gray-400">
-                                    <div className="flex flex-col items-center gap-3">
-                                        <RefreshCw className="h-8 w-8 animate-spin text-blue-500" />
-                                        <p>กำลังโหลดข้อมูล...</p>
-                                    </div>
-                                </td>
+                                ))}
                             </tr>
-                        ) : (
-                            <>
-                                {renderRoleSection('Administer', groupedUsers.ADMINISTER, 'text-blue-600')}
-                                {renderRoleSection('Editor', groupedUsers.EDITOR, 'text-green-600')}
-                                {renderRoleSection('Moderator', groupedUsers.MODERATOR, 'text-orange-600')}
-                                {renderRoleSection('Others / Lost Access', groupedUsers.OTHERS, 'text-gray-400')}
-                            </>
-                        )}
-                    </tbody>
-                </table>
+                            {/* Column Headers */}
+                            <tr className="border-b border-gray-200">
+                                {ALL_PERMISSIONS.map((perm, idx) => {
+                                    const isLastInGroup = PERMISSION_GROUPS.some(g => g.columns[g.columns.length - 1].id === perm.id);
+                                    return (
+                                        <th
+                                            key={perm.id}
+                                            className={`p-2 text-center text-xs font-normal text-gray-500 bg-gray-50/80 backdrop-blur-sm break-words ${isLastInGroup ? 'border-r border-gray-200' : ''}`}
+                                        >
+                                            {perm.label}
+                                        </th>
+                                    );
+                                })}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {loading ? (
+                                <tr>
+                                    <td colSpan={ALL_PERMISSIONS.length + 1} className="p-12 text-center text-gray-400">
+                                        <div className="flex flex-col items-center gap-3">
+                                            <RefreshCw className="h-8 w-8 animate-spin text-blue-500" />
+                                            <p>กำลังโหลดข้อมูล...</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ) : (
+                                <>
+                                    {renderRoleSection('Administer', groupedUsers.ADMINISTER, 'text-blue-600')}
+                                    {renderRoleSection('Editor', groupedUsers.EDITOR, 'text-green-600')}
+                                    {renderRoleSection('Moderator', groupedUsers.MODERATOR, 'text-orange-600')}
+                                    {renderRoleSection('Others / Lost Access', groupedUsers.OTHERS, 'text-gray-400')}
+                                </>
+                            )}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>

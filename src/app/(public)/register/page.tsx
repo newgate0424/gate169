@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Mail, Lock, User, Chrome } from 'lucide-react';
+import { Loader2, Mail, Lock, User } from 'lucide-react';
+import { GoogleIcon } from '@/components/ui/google-icon';
 
 export default function RegisterPage() {
     const router = useRouter();
@@ -189,7 +190,7 @@ export default function RegisterPage() {
                         className="w-full"
                         onClick={handleGoogleSignIn}
                     >
-                        <Chrome className="mr-2 h-4 w-4" />
+                        <GoogleIcon className="mr-2 h-4 w-4" />
                         ลงชื่อเข้าใช้ด้วย Google
                     </Button>
                 </CardContent>

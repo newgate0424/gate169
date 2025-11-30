@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { fetchPages, saveFacebookToken } from '@/app/actions';
+import { fetchPages, saveFacebookPageToken } from '@/app/actions';
 import { ConnectPlatform } from '@/components/ConnectPlatform';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,7 +43,7 @@ export default function OverviewPage() {
 
     const handleFacebookConnect = async (token: string) => {
         try {
-            await saveFacebookToken(token);
+            await saveFacebookPageToken(token);
             setShowConnectDialog(false);
             await loadPages();
         } catch (e) {
@@ -201,6 +201,7 @@ export default function OverviewPage() {
                         <ConnectPlatform
                             onLogin={handleFacebookConnect}
                             user={session?.user}
+                            scopes="pages_show_list,pages_read_engagement,pages_manage_metadata,pages_messaging,pages_read_user_content"
                         />
                     </div>
                 </div>

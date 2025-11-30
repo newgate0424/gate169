@@ -71,7 +71,7 @@ const createNotificationSound = () => {
     };
 };
 
-export default function AssetsPage() {
+export default function AdBoxVPage() {
     const { data: session } = useSession();
     const { t } = useLanguage();
     // @ts-expect-error
@@ -747,9 +747,9 @@ export default function AssetsPage() {
                 </div>
             )}
             {/* Chat Container */}
-            <Card className="flex-1 flex flex-row overflow-hidden rounded-2xl border shadow-lg mb-0">
+            <div className="flex-1 flex flex-row gap-3 overflow-hidden mb-0">
                 {/* Left Panel - Conversation List */}
-                <div className="w-[380px] flex-shrink-0 border-r border-gray-200 flex flex-col bg-white rounded-l-2xl overflow-hidden">
+                <Card className="w-[500px] flex-shrink-0 flex flex-col bg-white rounded-2xl border shadow-lg overflow-hidden">
                     {/* Header with page count */}
                     <div className="px-3 py-2 border-b flex items-center justify-between bg-gray-50 rounded-tl-xl">
                         <div className="flex items-center gap-2">
@@ -1039,10 +1039,10 @@ export default function AssetsPage() {
                             });
                         })()}
                     </ScrollArea >
-                </div >
+                </Card >
 
                 {/* Middle Panel - Chat View */}
-                <div className="flex-1 flex flex-col bg-white min-w-0">
+                <Card className="flex-1 flex flex-col bg-white min-w-0 rounded-2xl border shadow-lg overflow-hidden">
                     {
                         selectedConversation ? (
                             <>
@@ -1254,12 +1254,12 @@ export default function AssetsPage() {
                             </div>
                         )
                     }
-                </div >
+                </Card >
 
                 {/* Right Panel - Customer Details (Pancake style with tabs) */}
                 {
                     selectedConversation && showDetailPanel && (
-                        <div className="w-[320px] border-l bg-white flex-shrink-0 flex flex-col min-h-0 rounded-r-2xl">
+                        <Card className="w-[320px] bg-white flex-shrink-0 flex flex-col min-h-0 rounded-2xl border shadow-lg overflow-hidden">
                             {/* Tab Header */}
                             <div className="flex border-b flex-shrink-0">
                                 <button
@@ -1549,10 +1549,10 @@ export default function AssetsPage() {
                                     </>
                                 )}
                             </div>
-                        </div>
+                        </Card>
                     )
                 }
-            </Card >
+            </div >
         </div >
     );
 }

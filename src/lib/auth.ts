@@ -24,6 +24,14 @@ export const authOptions: NextAuthOptions = {
         GoogleProvider({
             clientId: process.env.GOOGLE_CLIENT_ID!,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+            allowDangerousEmailAccountLinking: false,
+            authorization: {
+                params: {
+                    prompt: "consent",
+                    access_type: "offline",
+                    response_type: "code"
+                }
+            }
         }),
         CredentialsProvider({
             name: 'Credentials',
@@ -86,12 +94,14 @@ export const authOptions: NextAuthOptions = {
                 // @ts-ignore
                 session.user.id = token.id || token.sub;
 
-                // Fetch the user from DB to get the facebookAccessToken
+                // Fetch the user from DB to get the facebookPageToken and facebookAdToken
                 try {
                     // @ts-ignore
-                    const dbUser = await db.findUserById(token.id || token.sub);
+                    const dbUser = await db.findUserWithToken(token.id || token.sub);
                     // @ts-ignore
-                    session.user.facebookAccessToken = dbUser?.facebookAccessToken;
+                    session.user.facebookPageToken = dbUser?.facebookPageToken;
+                    // @ts-ignore
+                    session.user.facebookAdToken = dbUser?.facebookAdToken;
                     console.log('✅ [Auth] Session loaded successfully');
                 } catch (error) {
                     console.error('❌ [Auth] Failed to load user from DB:', error);
@@ -110,12 +120,39 @@ export const authOptions: NextAuthOptions = {
         async createUser({ user }) {
             console.log('🆕 [Auth] New user created:', user.email);
         },
-        async linkAccount({ user, account }) {
+        async linkAccount({ user, account, profile }) {
             console.log('🔗 [Auth] Account linked:', { userId: user.id, provider: account.provider });
+
+            if (account.provider === 'google' && profile) {
+                try {
+                    const mode = await db.getMode();
+                    // @ts-ignore
+                    const image = profile.picture || profile.image || profile.avatar_url;
+                    // @ts-ignore
+                    const email = profile.email;
+
+                    if (mode === 'mysql') {
+                        // Use raw query to bypass Prisma Client validation
+                        await db.prisma.$executeRaw`
+                            UPDATE Account 
+                            SET providerEmail = ${email}, providerImage = ${image}
+                            WHERE provider = ${account.provider} AND providerAccountId = ${account.providerAccountId}
+                        `;
+                    } else {
+                        const { Account } = db.models;
+                        await Account.updateOne(
+                            { provider: account.provider, providerAccountId: account.providerAccountId },
+                            { $set: { providerEmail: email, providerImage: image } }
+                        );
+                    }
+                } catch (error) {
+                    console.error('❌ [Auth] Failed to update account profile:', error);
+                }
+            }
         },
     },
     pages: {
-        signIn: '/', // Redirect to landing page for sign in
-        error: '/', // Redirect errors to landing page
+        signIn: '/login', // Redirect to login page
+        error: '/login', // Redirect errors to login page to avoid redirect loop
     },
 };

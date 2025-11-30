@@ -7,8 +7,6 @@ import {
     LayoutDashboard,
     MessageCircle,
     Settings,
-    Users,
-    CreditCard,
     BarChart3,
     ChevronLeft,
     ChevronRight,
@@ -18,9 +16,11 @@ import { useLanguage } from '@/contexts/LanguageContext';
 interface SidebarProps {
     isCollapsed: boolean;
     toggleSidebar: () => void;
+    isMobile?: boolean;
+    onCloseMobile?: () => void;
 }
 
-export function Sidebar({ isCollapsed, toggleSidebar }: SidebarProps) {
+export function Sidebar({ isCollapsed, toggleSidebar, isMobile, onCloseMobile }: SidebarProps) {
     const pathname = usePathname();
     const { t } = useLanguage();
 
@@ -41,24 +41,9 @@ export function Sidebar({ isCollapsed, toggleSidebar }: SidebarProps) {
             href: '/admanager',
         },
         {
-            title: t('sidebar.audiences'),
-            icon: Users,
-            href: '/admanager/audiences',
-        },
-        {
-            title: t('sidebar.reports'),
-            icon: BarChart3,
-            href: '/admanager/reports',
-        },
-        {
-            title: t('sidebar.billing'),
-            icon: CreditCard,
-            href: '/admanager/billing',
-        },
-        {
             title: t('sidebar.settings'),
             icon: Settings,
-            href: '/settings/permissions',
+            href: '/settings/general',
         },
     ];
 
@@ -79,6 +64,7 @@ export function Sidebar({ isCollapsed, toggleSidebar }: SidebarProps) {
                             <li key={item.href}>
                                 <Link
                                     href={item.href}
+                                    onClick={isMobile ? onCloseMobile : undefined}
                                     className={cn(
                                         "flex items-center gap-3 p-2 rounded-xl transition-all duration-200 group relative",
                                         isCollapsed ? "justify-center flex-col gap-1" : "px-4 py-3",
