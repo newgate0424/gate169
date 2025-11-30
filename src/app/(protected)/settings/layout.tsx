@@ -42,7 +42,7 @@ export default function SettingsLayout({
     const pathname = usePathname();
 
     return (
-        <div className="h-full p-4 md:p-6 flex flex-row gap-4">
+        <div className="h-full p-4 md:py-6 md:px-[300px] flex flex-row gap-4">
             {/* Settings Sidebar */}
             <Card className="w-[280px] flex flex-col bg-white rounded-2xl border shadow-sm overflow-hidden flex-shrink-0 p-0 gap-0">
                 <div className="p-6 border-b">

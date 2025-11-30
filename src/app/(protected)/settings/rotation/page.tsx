@@ -150,7 +150,7 @@ export default function ChatRotationPage() {
     const commentUsersCount = 0;
 
     return (
-        <div className="space-y-6 pb-20 px-[200px] pt-6">
+        <div className="space-y-6 pb-20 px-[100px] pt-6">
             <div>
                 <h2 className="text-2xl font-bold tracking-tight">ระบบการหมุนรอบแชท</h2>
                 <div className="mt-2 bg-blue-50 text-blue-700 p-3 rounded-md text-sm flex gap-2 items-start">
