@@ -1,144 +1,149 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { ConnectPlatform } from '@/components/ConnectPlatform';
 import { AdsTable, AdData } from '@/components/AdsTable';
-import { fetchAdAccounts, fetchAdData, saveFacebookAdToken } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { DatePickerWithRange } from '@/components/DateRangePicker';
 import { DateRange } from 'react-day-picker';
-import { RefreshCw, Loader2, Database } from 'lucide-react';
-
-// Cache structure
-interface CacheEntry {
-    data: AdData[];
-    timestamp: number;
-    dateRange?: string;
-}
-
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
+import { subDays, formatDistanceToNow } from 'date-fns';
+import { th } from 'date-fns/locale';
+import { RefreshCw, Loader2, Database, Cloud, AlertCircle } from 'lucide-react';
 
 export default function AdManagerPage() {
     const { data: session } = useSession();
     const [adsData, setAdsData] = useState<AdData[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [date, setDate] = useState<DateRange | undefined>(undefined);
-    const [fromCache, setFromCache] = useState(false);
+    const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
+    
+    // Initialize date from localStorage or default to last 30 days
+    const [date, setDate] = useState<DateRange | undefined>(() => {
+        if (typeof window !== 'undefined') {
+            const savedDate = localStorage.getItem('admanager_dateRange');
+            if (savedDate) {
+                try {
+                    const parsed = JSON.parse(savedDate);
+                    return {
+                        from: new Date(parsed.from),
+                        to: new Date(parsed.to),
+                    };
+                } catch (e) {
+                    console.error('Failed to parse saved date:', e);
+                }
+            }
+        }
+        return {
+            from: subDays(new Date(), 30),
+            to: new Date(),
+        };
+    });
 
-    // Cache ref to persist across renders
-    const cacheRef = useRef<Map<string, CacheEntry>>(new Map());
+    // Save date to localStorage when it changes
+    useEffect(() => {
+        if (date?.from && date?.to) {
+            localStorage.setItem('admanager_dateRange', JSON.stringify({
+                from: date.from.toISOString(),
+                to: date.to.toISOString(),
+            }));
+        }
+    }, [date]);
 
     // @ts-ignore
-    const facebookToken = session?.user?.facebookAdToken; // Use Ad token for AdManager
+    const facebookToken = session?.user?.facebookAdToken;
 
-    const getCacheKey = (dateRange?: DateRange) => {
-        if (!dateRange?.from || !dateRange?.to) return 'all-time';
-        return `${dateRange.from.toISOString()}_${dateRange.to.toISOString()}`;
-    };
-
-    const handleFacebookConnect = async (token: string) => {
+    // Load ads from database (fast)
+    const loadAdsFromDB = useCallback(async () => {
         try {
-            await saveFacebookAdToken(token);
-            window.location.reload();
-        } catch (e) {
-            console.error("Failed to save token", e);
-            setError("Failed to save Facebook token");
-        }
-    };
+            setLoading(true);
+            setError(null);
 
-    const loadAllData = async (forceRefresh = false) => {
-        if (!facebookToken) return;
+            const response = await fetch('/api/ads/sync');
+            const data = await response.json();
 
-        const cacheKey = getCacheKey(date);
-        const cached = cacheRef.current.get(cacheKey);
-
-        // Use cache if valid and not forcing refresh
-        if (!forceRefresh && cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-            console.log('📦 Using cached data');
-            setAdsData(cached.data);
-            setFromCache(true);
-            return;
-        }
-
-        setLoading(true);
-        setError(null);
-        setAdsData([]);
-        setFromCache(false);
-
-        try {
-            const accounts = await fetchAdAccounts(facebookToken);
-
-            if (accounts.length === 0) {
-                setLoading(false);
-                return;
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to load ads');
             }
 
-            const results = await Promise.allSettled(accounts.map(async (account: any) => {
-                try {
-                    const range = date?.from && date?.to ? { from: date.from, to: date.to } : undefined;
-                    const data = await fetchAdData(facebookToken, account.id, range);
-                    return data.map((ad: any) => ({
-                        ...ad,
-                        accountName: account.name,
-                        accountId: account.account_id,
-                        currency: account.currency
-                    }));
-                } catch (e) {
-                    console.error(`Failed to fetch for ${account.name}`, e);
-                    return [];
-                }
+            // Transform data to match AdData type
+            const transformedAds: AdData[] = data.ads.map((ad: any) => ({
+                id: ad.id,
+                accountName: ad.accountName,
+                accountId: ad.adAccountId,
+                currency: ad.currency || 'THB',
+                name: ad.name,
+                status: ad.effectiveStatus || ad.status,
+                delivery: ad.effectiveStatus || ad.status,
+                budget: ad.budget || 'N/A',
+                results: ad.results || 0,
+                reach: ad.reach || 0,
+                impressions: ad.impressions || 0,
+                spend: ad.spend || 0,
+                roas: ad.roas || 0,
+                cpm: ad.cpm || 0,
+                campaignName: ad.campaignName || '',
+                adSetName: ad.adSetName || '',
+                thumbnail: ad.thumbnail || '',
+                post_engagements: ad.postEngagements || 0,
+                link_clicks: ad.linkClicks || 0,
+                new_messaging_contact: ad.results || 0,
+                video_avg_time: ad.videoAvgTime || 0,
+                video_plays: ad.videoPlays || 0,
+                video_3sec: ad.videoPlays || 0,
+                video_p25: ad.videoP25 || 0,
+                video_p50: ad.videoP50 || 0,
+                video_p75: ad.videoP75 || 0,
+                video_p95: ad.videoP95 || 0,
+                video_p100: ad.videoP100 || 0,
+                pageId: ad.pageId || 'N/A',
+                pageName: ad.pageName || 'N/A',
+                pageUsername: ad.pageUsername || null,
             }));
 
-            const allAds = results
-                .filter((result): result is PromiseFulfilledResult<any[]> => result.status === 'fulfilled')
-                .flatMap(result => result.value);
+            setAdsData(transformedAds);
+            
+            if (data.lastSyncAt) {
+                setLastSyncAt(new Date(data.lastSyncAt));
+            }
 
-            // Save to cache
-            cacheRef.current.set(cacheKey, {
-                data: allAds,
-                timestamp: Date.now(),
-                dateRange: cacheKey
-            });
-
-            setAdsData(allAds);
         } catch (err: any) {
-            console.error(err);
-            setError(err.message || 'Failed to load data');
+            console.error('Failed to load ads:', err);
+            // Don't set error for empty state
+            if (err.message !== 'Failed to load ads') {
+                setError(err.message);
+            }
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
+    // Initial load from database
     useEffect(() => {
         if (facebookToken) {
-            loadAllData();
+            loadAdsFromDB();
+        } else {
+            setLoading(false);
         }
-    }, [facebookToken, date]);
+    }, [facebookToken, loadAdsFromDB]);
+
+    // No more auto-sync from Facebook! 
+    // Data is synced by background cron job every 5 minutes
+    // UI just reads from database (fast!)
 
     if (!facebookToken) {
         return (
             <div className="w-full max-w-[95%] mx-auto">
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-2xl font-bold text-gray-800">Ad Manager</h1>
-                    <div className="flex items-center gap-4">
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            disabled
-                            className="bg-white border-gray-200"
-                        >
-                            <RefreshCw className="h-4 w-4" />
-                        </Button>
-                        <div className="bg-white rounded-md border border-gray-200">
-                            <DatePickerWithRange date={date} setDate={setDate} className="border-0" />
-                        </div>
-                    </div>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <AdsTable data={[]} accessToken="" user={session?.user} />
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center">
+                    <Cloud className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">เชื่อมต่อ Facebook</h3>
+                    <p className="text-gray-500 mb-4">กรุณาเชื่อมต่อ Facebook เพื่อดูข้อมูลโฆษณา</p>
+                    <Button onClick={() => window.location.href = '/settings/connect'}>
+                        ไปหน้าเชื่อมต่อ
+                    </Button>
                 </div>
             </div>
         );
@@ -147,45 +152,51 @@ export default function AdManagerPage() {
     return (
         <div className="w-full max-w-[95%] mx-auto">
             <div className="flex justify-between items-center mb-6">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                     <h1 className="text-2xl font-bold text-gray-800">Ad Manager</h1>
-                    {fromCache && (
-                        <span className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                    
+                    {/* Status indicator - shows last sync time */}
+                    {lastSyncAt && (
+                        <span className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full">
                             <Database className="h-3 w-3" />
-                            Cached
+                            อัพเดท {formatDistanceToNow(lastSyncAt, { addSuffix: true, locale: th })}
                         </span>
                     )}
                 </div>
-                <div className="flex items-center gap-4">
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => loadAllData(true)}
-                        disabled={loading}
-                        className="bg-white border-gray-200 hover:bg-gray-50"
-                        title="Force refresh from API"
-                    >
-                        <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                    </Button>
-                    <div className="bg-white rounded-md border border-gray-200">
-                        <DatePickerWithRange date={date} setDate={setDate} className="border-0" />
-                    </div>
-                </div>
+                
+                {/* Date picker and other controls are now in AdsTable */}
             </div>
 
-            {loading && adsData.length === 0 ? (
-                <div className="flex justify-center items-center h-64 bg-white rounded-xl shadow-sm border border-gray-100">
-                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-                </div>
-            ) : (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <AdsTable data={adsData} accessToken={facebookToken} user={session?.user} />
+            {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                    <span>{error}</span>
+                    <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => setError(null)}
+                        className="ml-auto text-red-600 hover:text-red-700"
+                    >
+                        ปิด
+                    </Button>
                 </div>
             )}
 
-            {error && (
-                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative fixed bottom-4 right-4 max-w-md">
-                    {error}
+            {loading ? (
+                <div className="flex flex-col justify-center items-center h-64 bg-white rounded-xl shadow-sm border border-gray-100 gap-4">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                    <div className="text-sm text-gray-500">กำลังโหลดข้อมูลจากฐานข้อมูล...</div>
+                </div>
+            ) : adsData.length === 0 ? (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center">
+                    <Database className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">ไม่พบข้อมูลโฆษณา</h3>
+                    <p className="text-gray-500 mb-4">ระบบกำลัง Sync ข้อมูลอัตโนมัติทุก 5 นาที</p>
+                    <p className="text-xs text-gray-400">หรือรอสักครู่แล้วรีเฟรชหน้านี้</p>
+                </div>
+            ) : (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    <AdsTable data={adsData} accessToken={facebookToken} user={session?.user} date={date} setDate={setDate} />
                 </div>
             )}
         </div>

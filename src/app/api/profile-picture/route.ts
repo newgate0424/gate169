@@ -24,7 +24,7 @@ async function getPageToken(pageId: string, userAccessToken: string): Promise<st
 
     try {
         const pageResponse = await fetch(
-            `https://graph.facebook.com/v18.0/${pageId}?fields=access_token&access_token=${userAccessToken}`
+            `https://graph.facebook.com/v21.0/${pageId}?fields=access_token&access_token=${userAccessToken}`
         );
         const pageData = await pageResponse.json();
 

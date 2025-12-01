@@ -143,3 +143,184 @@ model PageSettings {
   
   updatedAt DateTime @updatedAt
 }
+
+// =============================================
+// Ad Manager Models - Cached from Facebook API
+// =============================================
+
+model AdAccount {
+  id            String   @id // Facebook Ad Account ID (act_xxxx)
+  userId        String   // Owner user ID
+  accountId     String   // Numeric account ID
+  name          String
+  currency      String   @default("THB")
+  accountStatus Int      @default(1)
+  timezone      String?
+  timezoneOffset Int     @default(0)
+  
+  // Cached stats (updated during sync)
+  totalAds      Int      @default(0)
+  activeAds     Int      @default(0)
+  pausedAds     Int      @default(0)
+  totalSpend    Float    @default(0)
+  totalImpressions Int   @default(0)
+  totalReach    Int      @default(0)
+  totalClicks   Int      @default(0)
+  
+  campaigns     Campaign[]
+  ads           FacebookAd[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastSyncAt    DateTime @default(now())
+  
+  @@index([userId])
+}
+
+model Campaign {
+  id              String   @id // Facebook Campaign ID
+  adAccountId     String
+  adAccount       AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  
+  name            String
+  status          String   // ACTIVE, PAUSED, DELETED, etc.
+  effectiveStatus String   // actual delivery status
+  objective       String?
+  
+  // Budget
+  dailyBudget     Float?
+  lifetimeBudget  Float?
+  budgetRemaining Float?
+  
+  // Dates
+  startTime       DateTime?
+  stopTime        DateTime?
+  
+  // Cached insights
+  impressions     Int      @default(0)
+  reach           Int      @default(0)
+  spend           Float    @default(0)
+  clicks          Int      @default(0)
+  results         Int      @default(0)
+  
+  adSets          AdSet[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([adAccountId])
+  @@index([status])
+}
+
+model AdSet {
+  id              String   @id // Facebook AdSet ID
+  campaignId      String
+  campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  adAccountId     String
+  
+  name            String
+  status          String
+  effectiveStatus String
+  
+  // Budget
+  dailyBudget     Float?
+  lifetimeBudget  Float?
+  budgetRemaining Float?
+  
+  // Optimization
+  optimizationGoal String?
+  billingEvent    String?
+  bidAmount       Float?
+  
+  // Dates
+  startTime       DateTime?
+  endTime         DateTime?
+  
+  // Cached insights
+  impressions     Int      @default(0)
+  reach           Int      @default(0)
+  spend           Float    @default(0)
+  clicks          Int      @default(0)
+  results         Int      @default(0)
+  
+  ads             FacebookAd[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([campaignId])
+  @@index([adAccountId])
+  @@index([status])
+}
+
+model FacebookAd {
+  id              String   @id // Facebook Ad ID
+  adAccountId     String
+  adAccount       AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  adSetId         String?
+  adSet           AdSet?   @relation(fields: [adSetId], references: [id], onDelete: SetNull)
+  
+  name            String
+  status          String   // ACTIVE, PAUSED, DELETED, etc.
+  effectiveStatus String   // actual delivery status
+  
+  // Campaign & AdSet info (denormalized for quick access)
+  campaignId      String?
+  campaignName    String?
+  adSetName       String?
+  
+  // Creative
+  thumbnail       String?  @db.Text
+  
+  // Budget (stored as string, can be daily or lifetime)
+  budget          String?
+  
+  // Page info
+  pageId          String?
+  pageName        String?
+  pageUsername    String?
+  
+  // Insights - aggregated stats (updated periodically)
+  impressions     Int      @default(0)
+  reach           Int      @default(0)
+  spend           Float    @default(0)
+  clicks          Int      @default(0)
+  results         Int      @default(0) // messaging_first_reply
+  roas            Float    @default(0)
+  cpm             Float    @default(0)
+  
+  // Video metrics
+  videoPlays      Int      @default(0)
+  videoP25        Int      @default(0)
+  videoP50        Int      @default(0)
+  videoP75        Int      @default(0)
+  videoP95        Int      @default(0)
+  videoP100       Int      @default(0)
+  videoAvgTime    Float    @default(0)
+  
+  // Engagement
+  postEngagements Int      @default(0)
+  linkClicks      Int      @default(0)
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastSyncAt      DateTime @default(now()) // Last time insights were synced
+  
+  @@index([adAccountId])
+  @@index([status])
+  @@index([pageId])
+}
+
+// Track sync history
+model AdSyncLog {
+  id          String   @id @default(cuid())
+  userId      String
+  adAccountId String?
+  syncType    String   // FULL, INCREMENTAL, WEBHOOK
+  status      String   // SUCCESS, FAILED, IN_PROGRESS
+  adsCount    Int      @default(0)
+  error       String?  @db.Text
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+}

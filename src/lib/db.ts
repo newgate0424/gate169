@@ -109,11 +109,72 @@ const pageSettingsSchema = new mongoose.Schema({
     assignToNonSelected: String,
 }, { timestamps: true });
 
+// Ad Manager Schemas
+const adAccountSchema = new mongoose.Schema({
+    _id: String, // Facebook Ad Account ID (act_xxxx)
+    userId: String,
+    accountId: String,
+    name: String,
+    currency: { type: String, default: 'THB' },
+    accountStatus: { type: Number, default: 1 },
+}, { timestamps: true });
+
+const facebookAdSchema = new mongoose.Schema({
+    _id: String, // Facebook Ad ID
+    adAccountId: String,
+    name: String,
+    status: String,
+    effectiveStatus: String,
+    campaignId: String,
+    campaignName: String,
+    adSetId: String,
+    adSetName: String,
+    thumbnail: String,
+    budget: String,
+    pageId: String,
+    pageName: String,
+    pageUsername: String,
+    // Insights
+    impressions: { type: Number, default: 0 },
+    reach: { type: Number, default: 0 },
+    spend: { type: Number, default: 0 },
+    clicks: { type: Number, default: 0 },
+    results: { type: Number, default: 0 },
+    roas: { type: Number, default: 0 },
+    cpm: { type: Number, default: 0 },
+    // Video metrics
+    videoPlays: { type: Number, default: 0 },
+    videoP25: { type: Number, default: 0 },
+    videoP50: { type: Number, default: 0 },
+    videoP75: { type: Number, default: 0 },
+    videoP95: { type: Number, default: 0 },
+    videoP100: { type: Number, default: 0 },
+    videoAvgTime: { type: Number, default: 0 },
+    // Engagement
+    postEngagements: { type: Number, default: 0 },
+    linkClicks: { type: Number, default: 0 },
+    lastSyncAt: { type: Date, default: Date.now },
+}, { timestamps: true });
+
+const adSyncLogSchema = new mongoose.Schema({
+    userId: String,
+    adAccountId: String,
+    syncType: String,
+    status: String,
+    adsCount: { type: Number, default: 0 },
+    error: String,
+    startedAt: { type: Date, default: Date.now },
+    completedAt: Date,
+}, { timestamps: true });
+
 // Create indexes
 conversationSchema.index({ pageId: 1 });
 conversationSchema.index({ adId: 1 });
 conversationSchema.index({ lastMessageAt: -1 });
 messageSchema.index({ conversationId: 1 });
+facebookAdSchema.index({ adAccountId: 1 });
+facebookAdSchema.index({ status: 1 });
+adAccountSchema.index({ userId: 1 });
 
 // MongoDB Models
 let UserModel: mongoose.Model<any>;
@@ -122,6 +183,9 @@ let AccountModel: mongoose.Model<any>;
 let ConversationModel: mongoose.Model<any>;
 let MessageModel: mongoose.Model<any>;
 let PageSettingsModel: mongoose.Model<any>;
+let AdAccountModel: mongoose.Model<any>;
+let FacebookAdModel: mongoose.Model<any>;
+let AdSyncLogModel: mongoose.Model<any>;
 
 // Initialize models only once
 function initModels() {
@@ -132,6 +196,9 @@ function initModels() {
         ConversationModel = mongoose.models.Conversation || mongoose.model('Conversation', conversationSchema);
         MessageModel = mongoose.models.Message || mongoose.model('Message', messageSchema);
         PageSettingsModel = mongoose.models.PageSettings || mongoose.model('PageSettings', pageSettingsSchema);
+        AdAccountModel = mongoose.models.AdAccount || mongoose.model('AdAccount', adAccountSchema);
+        FacebookAdModel = mongoose.models.FacebookAd || mongoose.model('FacebookAd', facebookAdSchema);
+        AdSyncLogModel = mongoose.models.AdSyncLog || mongoose.model('AdSyncLog', adSyncLogSchema);
     }
 }
 
@@ -717,13 +784,266 @@ export const db = {
             Account: AccountModel,
             Conversation: ConversationModel,
             Message: MessageModel,
-            PageSettings: PageSettingsModel
+            PageSettings: PageSettingsModel,
+            AdAccount: AdAccountModel,
+            FacebookAd: FacebookAdModel,
+            AdSyncLog: AdSyncLogModel
         };
     },
 
     // ---- Get current mode ----
     async getMode() {
         return getActiveDB();
+    },
+
+    // ======================================
+    // Ad Manager Functions
+    // ======================================
+
+    async upsertAdAccount(data: {
+        id: string;
+        userId: string;
+        accountId: string;
+        name: string;
+        currency?: string;
+        accountStatus?: number;
+    }) {
+        const mode = await getActiveDB();
+        if (mode === 'mysql') {
+            return prisma.adAccount.upsert({
+                where: { id: data.id },
+                update: {
+                    name: data.name,
+                    currency: data.currency || 'THB',
+                    accountStatus: data.accountStatus || 1,
+                    updatedAt: new Date()
+                },
+                create: data
+            });
+        } else {
+            return AdAccountModel.findByIdAndUpdate(
+                data.id,
+                { $set: data },
+                { upsert: true, new: true }
+            );
+        }
+    },
+
+    async getAdAccountsByUser(userId: string) {
+        const mode = await getActiveDB();
+        if (mode === 'mysql') {
+            return prisma.adAccount.findMany({
+                where: { userId },
+                include: { ads: true }
+            });
+        } else {
+            const accounts = await AdAccountModel.find({ userId }).lean();
+            // Get ads for each account
+            for (const acc of accounts) {
+                (acc as any).ads = await FacebookAdModel.find({ adAccountId: acc._id }).lean();
+            }
+            return accounts.map((a: any) => ({ ...a, id: a._id }));
+        }
+    },
+
+    async upsertFacebookAd(data: any) {
+        const mode = await getActiveDB();
+        const now = new Date();
+        
+        if (mode === 'mysql') {
+            return prisma.facebookAd.upsert({
+                where: { id: data.id },
+                update: {
+                    ...data,
+                    updatedAt: now,
+                    lastSyncAt: now
+                },
+                create: {
+                    ...data,
+                    createdAt: now,
+                    updatedAt: now,
+                    lastSyncAt: now
+                }
+            });
+        } else {
+            return FacebookAdModel.findByIdAndUpdate(
+                data.id,
+                { $set: { ...data, lastSyncAt: now } },
+                { upsert: true, new: true }
+            );
+        }
+    },
+
+    async upsertManyFacebookAds(ads: any[]) {
+        const mode = await getActiveDB();
+        const now = new Date();
+        
+        if (mode === 'mysql') {
+            // Use transaction for batch upsert
+            const operations = ads.map(ad => 
+                prisma.facebookAd.upsert({
+                    where: { id: ad.id },
+                    update: { ...ad, updatedAt: now, lastSyncAt: now },
+                    create: { ...ad, createdAt: now, updatedAt: now, lastSyncAt: now }
+                })
+            );
+            return prisma.$transaction(operations);
+        } else {
+            const bulkOps = ads.map(ad => ({
+                updateOne: {
+                    filter: { _id: ad.id },
+                    update: { $set: { ...ad, lastSyncAt: now } },
+                    upsert: true
+                }
+            }));
+            return FacebookAdModel.bulkWrite(bulkOps);
+        }
+    },
+
+    async getAdsByUser(userId: string) {
+        const mode = await getActiveDB();
+        
+        if (mode === 'mysql') {
+            const accounts = await prisma.adAccount.findMany({
+                where: { userId },
+                select: { id: true, name: true, currency: true }
+            });
+            
+            if (accounts.length === 0) return [];
+            
+            const accountIds = accounts.map(a => a.id);
+            const ads = await prisma.facebookAd.findMany({
+                where: { adAccountId: { in: accountIds } },
+                orderBy: { updatedAt: 'desc' }
+            });
+            
+            // Map account info to ads
+            const accountMap = new Map(accounts.map(a => [a.id, a]));
+            return ads.map(ad => ({
+                ...ad,
+                accountName: accountMap.get(ad.adAccountId)?.name,
+                currency: accountMap.get(ad.adAccountId)?.currency
+            }));
+        } else {
+            const accounts = await AdAccountModel.find({ userId }).lean();
+            if (accounts.length === 0) return [];
+            
+            const accountIds = accounts.map((a: any) => a._id);
+            const ads = await FacebookAdModel.find({ adAccountId: { $in: accountIds } })
+                .sort({ updatedAt: -1 })
+                .lean();
+            
+            const accountMap = new Map(accounts.map((a: any) => [a._id, a]));
+            return ads.map((ad: any) => ({
+                ...ad,
+                id: ad._id,
+                accountName: (accountMap.get(ad.adAccountId) as any)?.name,
+                currency: (accountMap.get(ad.adAccountId) as any)?.currency
+            }));
+        }
+    },
+
+    async getLastSyncTime(userId: string): Promise<Date | null> {
+        const mode = await getActiveDB();
+        
+        if (mode === 'mysql') {
+            const log = await prisma.adSyncLog.findFirst({
+                where: { userId, status: 'SUCCESS' },
+                orderBy: { completedAt: 'desc' }
+            });
+            return log?.completedAt || null;
+        } else {
+            const log = await AdSyncLogModel.findOne({ userId, status: 'SUCCESS' })
+                .sort({ completedAt: -1 })
+                .lean();
+            return (log as any)?.completedAt || null;
+        }
+    },
+
+    async createSyncLog(data: { userId: string; adAccountId?: string; syncType: string }) {
+        const mode = await getActiveDB();
+        const now = new Date();
+        
+        if (mode === 'mysql') {
+            return prisma.adSyncLog.create({
+                data: {
+                    ...data,
+                    status: 'IN_PROGRESS',
+                    startedAt: now
+                }
+            });
+        } else {
+            return AdSyncLogModel.create({
+                ...data,
+                status: 'IN_PROGRESS',
+                startedAt: now
+            });
+        }
+    },
+
+    async updateSyncLog(id: string, data: { status: string; adsCount?: number; error?: string }) {
+        const mode = await getActiveDB();
+        const now = new Date();
+        
+        if (mode === 'mysql') {
+            return prisma.adSyncLog.update({
+                where: { id },
+                data: {
+                    ...data,
+                    completedAt: now
+                }
+            });
+        } else {
+            return AdSyncLogModel.findByIdAndUpdate(id, {
+                $set: { ...data, completedAt: now }
+            });
+        }
+    },
+
+    async updateAdStatus(adId: string, status: string) {
+        const mode = await getActiveDB();
+        
+        if (mode === 'mysql') {
+            return prisma.facebookAd.update({
+                where: { id: adId },
+                data: { status, effectiveStatus: status, updatedAt: new Date() }
+            });
+        } else {
+            return FacebookAdModel.findByIdAndUpdate(adId, {
+                $set: { status, effectiveStatus: status }
+            });
+        }
+    },
+
+    async deleteAdsNotInList(adAccountId: string, activeAdIds: string[]) {
+        const mode = await getActiveDB();
+        
+        if (mode === 'mysql') {
+            return prisma.facebookAd.deleteMany({
+                where: {
+                    adAccountId,
+                    id: { notIn: activeAdIds }
+                }
+            });
+        } else {
+            return FacebookAdModel.deleteMany({
+                adAccountId,
+                _id: { $nin: activeAdIds }
+            });
+        }
+    },
+
+    // Get ads by ad account ID (for polling comparison)
+    async getAdsByAdAccount(adAccountId: string) {
+        const mode = await getActiveDB();
+        
+        if (mode === 'mysql') {
+            return prisma.facebookAd.findMany({
+                where: { adAccountId }
+            });
+        } else {
+            return FacebookAdModel.find({ adAccountId }).lean();
+        }
     }
 };
 

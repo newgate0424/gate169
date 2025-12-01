@@ -107,6 +107,34 @@ const translations = {
         'audiences.people': 'คน',
         'audiences.updated': 'อัพเดท',
         'audiences.active': 'ใช้งาน',
+
+        // Ad Manager Status - Campaign/Ad Set level (ตรงกับ Facebook Ads Manager)
+        'status.ACTIVE': 'ใช้งานอยู่',
+        'status.PAUSED': 'ปิดอยู่',
+        'status.DELETED': 'ถูกลบ',
+        'status.ARCHIVED': 'เก็บถาวรแล้ว',
+        'status.PENDING_REVIEW': 'อยู่ระหว่างการตรวจสอบ',
+        'status.DISAPPROVED': 'ถูกปฏิเสธ',
+        'status.PREAPPROVED': 'ได้รับการอนุมัติล่วงหน้า',
+        'status.PENDING_BILLING_INFO': 'รอข้อมูลการเรียกเก็บเงิน',
+        'status.CAMPAIGN_PAUSED': 'แคมเปญปิดอยู่',
+        'status.ADSET_PAUSED': 'กลุ่มโฆษณาปิดอยู่',
+        'status.IN_PROCESS': 'กำลังดำเนินการ',
+        'status.WITH_ISSUES': 'เกิดข้อผิดพลาดในการแสดงโฆษณา',
+        
+        // Additional Facebook status
+        'status.NOT_DELIVERING': 'ไม่ได้นำส่งอยู่ตอนนี้',
+        'status.NOT_PUBLISHED': 'ยังไม่ได้เผยแพร่',
+        'status.PENDING': 'รอดำเนินการ',
+        'status.ERROR': 'เกิดข้อผิดพลาด',
+        'status.ADS_PAUSED': 'โฆษณาปิดอยู่',
+        'status.NO_ADS': 'ไม่มีโฆษณา',
+        'status.LEARNING': 'กำลังเรียนรู้',
+        'status.LEARNING_LIMITED': 'จำกัดการเรียนรู้',
+        'status.SCHEDULED': 'มีกำหนดการ',
+        'status.COMPLETED': 'เสร็จสิ้น',
+        'status.PARTIALLY_PAUSED': 'หยุดชั่วคราวบางส่วน',
+        'status.AD_PAUSED': 'โฆษณาถูกหยุด',
     },
     en: {
         // Header
@@ -204,6 +232,34 @@ const translations = {
         'audiences.people': 'people',
         'audiences.updated': 'Updated',
         'audiences.active': 'Active',
+
+        // Ad Manager Status
+        'status.ACTIVE': 'Active',
+        'status.PAUSED': 'Off',
+        'status.DELETED': 'Deleted',
+        'status.ARCHIVED': 'Archived',
+        'status.PENDING_REVIEW': 'In Review',
+        'status.DISAPPROVED': 'Rejected',
+        'status.PREAPPROVED': 'Preapproved',
+        'status.PENDING_BILLING_INFO': 'Pending Billing Info',
+        'status.CAMPAIGN_PAUSED': 'Campaign Off',
+        'status.ADSET_PAUSED': 'Ad Set Off',
+        'status.IN_PROCESS': 'Processing',
+        'status.WITH_ISSUES': 'Delivery Error',
+        
+        // Additional Facebook status
+        'status.NOT_DELIVERING': 'Not Delivering',
+        'status.NOT_PUBLISHED': 'Not Published',
+        'status.PENDING': 'Pending',
+        'status.ERROR': 'Error',
+        'status.ADS_PAUSED': 'Ads Off',
+        'status.NO_ADS': 'No Ads',
+        'status.LEARNING': 'Learning',
+        'status.LEARNING_LIMITED': 'Learning Limited',
+        'status.SCHEDULED': 'Scheduled',
+        'status.COMPLETED': 'Completed',
+        'status.PARTIALLY_PAUSED': 'Partially Off',
+        'status.AD_PAUSED': 'Ad Off',
     },
 };
 

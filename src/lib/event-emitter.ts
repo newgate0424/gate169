@@ -59,13 +59,86 @@ class MessageEventEmitter {
     }
 }
 
+// Ads Event Emitter - สำหรับ broadcast ad updates แบบ real-time
+class AdsEventEmitter {
+    private listeners: Map<string, Set<Listener>> = new Map(); // userId -> listeners
+
+    // Subscribe to ad updates for a user
+    subscribe(userId: string, listener: Listener): () => void {
+        if (!this.listeners.has(userId)) {
+            this.listeners.set(userId, new Set());
+        }
+        this.listeners.get(userId)!.add(listener);
+
+        console.log(`[Ads SSE] User ${userId} subscribed. Total listeners: ${this.getTotalListeners()}`);
+
+        // Return unsubscribe function
+        return () => {
+            this.listeners.get(userId)?.delete(listener);
+            console.log(`[Ads SSE] User ${userId} unsubscribed. Total listeners: ${this.getTotalListeners()}`);
+        };
+    }
+
+    // Emit ad update to specific user
+    emit(userId: string, data: any) {
+        const userListeners = this.listeners.get(userId);
+        console.log(`[Ads SSE] Emitting to user ${userId}. Listeners: ${userListeners?.size || 0}`);
+        
+        if (userListeners && userListeners.size > 0) {
+            for (const listener of userListeners) {
+                try {
+                    listener(data);
+                    console.log(`[Ads SSE] Event sent successfully to user ${userId}`);
+                } catch (err) {
+                    console.error('[Ads SSE] Error in listener:', err);
+                }
+            }
+        }
+    }
+
+    // Emit to all connected users (for broadcast updates)
+    broadcast(data: any) {
+        console.log(`[Ads SSE] Broadcasting to all users. Total listeners: ${this.getTotalListeners()}`);
+        for (const [userId, listeners] of this.listeners) {
+            for (const listener of listeners) {
+                try {
+                    listener(data);
+                } catch (err) {
+                    console.error(`[Ads SSE] Error broadcasting to user ${userId}:`, err);
+                }
+            }
+        }
+    }
+
+    // Emit to users who have access to specific ad account
+    emitToAdAccount(adAccountId: string, data: any) {
+        // For now, broadcast to all - in production, filter by ad account access
+        this.broadcast({ ...data, adAccountId });
+    }
+
+    getListenerCount(userId: string): number {
+        return this.listeners.get(userId)?.size || 0;
+    }
+
+    getTotalListeners(): number {
+        let total = 0;
+        for (const listeners of this.listeners.values()) {
+            total += listeners.size;
+        }
+        return total;
+    }
+}
+
 // Global singleton that persists across hot reloads in development
 const globalForEmitter = globalThis as unknown as {
     messageEmitter: MessageEventEmitter | undefined;
+    adsEmitter: AdsEventEmitter | undefined;
 };
 
 export const messageEmitter = globalForEmitter.messageEmitter ?? new MessageEventEmitter();
+export const adsEmitter = globalForEmitter.adsEmitter ?? new AdsEventEmitter();
 
 if (process.env.NODE_ENV !== 'production') {
     globalForEmitter.messageEmitter = messageEmitter;
+    globalForEmitter.adsEmitter = adsEmitter;
 }

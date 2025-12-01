@@ -39,7 +39,7 @@ export function ConnectPlatform({ onLogin, user, scopes }: ConnectPlatformProps)
                 appId: process.env.NEXT_PUBLIC_FACEBOOK_APP_ID,
                 cookie: true,
                 xfbml: true,
-                version: 'v18.0',
+                version: 'v21.0',
             });
             setIsSdkLoaded(true);
         };

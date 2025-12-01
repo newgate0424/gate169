@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Header } from '@/components/Header';
 import { Sidebar } from '@/components/Sidebar';
+import { PollingInitializer } from '@/components/PollingInitializer';
 import { useSession, signOut } from 'next-auth/react';
 import { redirect } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
@@ -26,6 +27,9 @@ export default function AdManagerLayout({
 
     return (
         <div className="h-screen bg-[#F0F9FF] flex flex-col overflow-hidden">
+            {/* Polling disabled - using manual sync instead */}
+            {/* <PollingInitializer /> */}
+            
             <Header
                 user={session.user}
                 onLogout={() => signOut({ callbackUrl: '/' })}

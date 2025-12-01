@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { messageEmitter } from '@/lib/event-emitter';
+import { messageEmitter, adsEmitter } from '@/lib/event-emitter';
 import { db, getActiveDB, getCurrentDBMode } from '@/lib/db';
 
 // Verify Token - Should match what you set in Facebook App Dashboard
@@ -30,7 +30,7 @@ async function getPageAccessToken(pageId: string): Promise<string | null> {
 
             // Try to get page token from this user
             const response = await fetch(
-                `https://graph.facebook.com/v18.0/${pageId}?fields=access_token&access_token=${user.facebookPageToken}`
+                `https://graph.facebook.com/v21.0/${pageId}?fields=access_token&access_token=${user.facebookPageToken}`
             );
             const data = await response.json();
 
@@ -116,6 +116,15 @@ export async function POST(req: NextRequest) {
                         }
                     }
                 }
+            }
+
+            return new NextResponse('EVENT_RECEIVED', { status: 200 });
+        } else if (body.object === 'ad_account') {
+            // Handle Ad Account webhooks
+            console.log('[Webhook] Processing ad_account event');
+            
+            for (const entry of body.entry) {
+                await handleAdAccountEvent(entry);
             }
 
             return new NextResponse('EVENT_RECEIVED', { status: 200 });
@@ -240,7 +249,7 @@ async function handleMessage(pageId: string, event: any) {
 
                     if (pageToken) {
                         const userResponse = await fetch(
-                            `https://graph.facebook.com/v18.0/${senderId}?fields=name&access_token=${pageToken}`
+                            `https://graph.facebook.com/v21.0/${senderId}?fields=name&access_token=${pageToken}`
                         );
                         const userData = await userResponse.json();
                         console.log(`[Webhook] User API response:`, userData);
@@ -372,4 +381,117 @@ async function handleMessage(pageId: string, event: any) {
     } catch (error) {
         console.error("Error saving message to DB:", error);
     }
+}
+
+// Handle Ad Account Webhook Events
+async function handleAdAccountEvent(entry: any) {
+    const adAccountId = entry.id;
+    const time = entry.time;
+    const changes = entry.changes || [];
+
+    console.log(`[Webhook] Ad Account ${adAccountId} changes:`, changes);
+
+    for (const change of changes) {
+        const field = change.field;
+        const value = change.value;
+
+        console.log(`[Webhook] Ad Account change - Field: ${field}, Value:`, value);
+
+        // Handle different types of ad changes
+        switch (field) {
+            case 'ads':
+                // Ad was created, updated, or deleted
+                await handleAdChange(adAccountId, value);
+                break;
+            case 'campaigns':
+                // Campaign was created, updated, or deleted
+                await handleCampaignChange(adAccountId, value);
+                break;
+            case 'adsets':
+                // Ad Set was created, updated, or deleted
+                await handleAdSetChange(adAccountId, value);
+                break;
+            case 'ad_creative':
+                // Ad creative was updated
+                await handleCreativeChange(adAccountId, value);
+                break;
+            default:
+                console.log(`[Webhook] Unhandled ad account field: ${field}`);
+        }
+    }
+}
+
+// Handle individual Ad changes
+async function handleAdChange(adAccountId: string, value: any) {
+    const { ad_id, ad_name, status, effective_status } = value;
+    
+    console.log(`[Webhook] Ad Change - ID: ${ad_id}, Name: ${ad_name}, Status: ${status}`);
+
+    // Emit real-time update to all connected clients
+    adsEmitter.emitToAdAccount(adAccountId, {
+        type: 'ad_updated',
+        timestamp: new Date().toISOString(),
+        data: {
+            adAccountId,
+            adId: ad_id,
+            adName: ad_name,
+            status,
+            effectiveStatus: effective_status,
+        }
+    });
+
+    // Optionally update the database immediately
+    // For now, we just notify the UI to trigger a refresh
+}
+
+// Handle Campaign changes
+async function handleCampaignChange(adAccountId: string, value: any) {
+    const { campaign_id, campaign_name, status, effective_status } = value;
+    
+    console.log(`[Webhook] Campaign Change - ID: ${campaign_id}, Name: ${campaign_name}, Status: ${status}`);
+
+    adsEmitter.emitToAdAccount(adAccountId, {
+        type: 'campaign_updated',
+        timestamp: new Date().toISOString(),
+        data: {
+            adAccountId,
+            campaignId: campaign_id,
+            campaignName: campaign_name,
+            status,
+            effectiveStatus: effective_status,
+        }
+    });
+}
+
+// Handle Ad Set changes
+async function handleAdSetChange(adAccountId: string, value: any) {
+    const { adset_id, adset_name, status, effective_status } = value;
+    
+    console.log(`[Webhook] AdSet Change - ID: ${adset_id}, Name: ${adset_name}, Status: ${status}`);
+
+    adsEmitter.emitToAdAccount(adAccountId, {
+        type: 'adset_updated',
+        timestamp: new Date().toISOString(),
+        data: {
+            adAccountId,
+            adSetId: adset_id,
+            adSetName: adset_name,
+            status,
+            effectiveStatus: effective_status,
+        }
+    });
+}
+
+// Handle Creative changes
+async function handleCreativeChange(adAccountId: string, value: any) {
+    console.log(`[Webhook] Creative Change:`, value);
+
+    adsEmitter.emitToAdAccount(adAccountId, {
+        type: 'creative_updated',
+        timestamp: new Date().toISOString(),
+        data: {
+            adAccountId,
+            ...value
+        }
+    });
 }

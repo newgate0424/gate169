@@ -5,6 +5,59 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getAdAccounts, getAdInsights, updateAdStatus, getPages, getPageConversations } from '@/lib/facebook';
 
+// Save Facebook Token (Combined - for both AdBox and AdManager)
+export async function saveFacebookToken(shortLivedToken: string) {
+    const session = await getServerSession(authOptions);
+
+    if (!session || !session.user) {
+        throw new Error("Not authenticated");
+    }
+
+    // @ts-ignore
+    const userId = session.user.id;
+
+    // Exchange short-lived token (2 hours) for long-lived token (60 days)
+    let longLivedToken = shortLivedToken;
+    try {
+        const exchangeUrl = `https://graph.facebook.com/v21.0/oauth/access_token?` +
+            `grant_type=fb_exchange_token&` +
+            `client_id=${process.env.NEXT_PUBLIC_FACEBOOK_APP_ID}&` +
+            `client_secret=${process.env.FACEBOOK_APP_SECRET}&` +
+            `fb_exchange_token=${shortLivedToken}`;
+
+        const response = await fetch(exchangeUrl);
+        const data = await response.json();
+
+        if (data.access_token) {
+            longLivedToken = data.access_token;
+            console.log('[Token Exchange] Successfully got long-lived token, expires in:', data.expires_in, 'seconds');
+        } else {
+            console.warn('[Token Exchange] Failed, using short-lived token:', data.error?.message);
+        }
+    } catch (err) {
+        console.error('[Token Exchange] Error:', err);
+    }
+
+    // Save long-lived token to BOTH fields
+    try {
+        await db.updateUser(userId, { 
+            facebookPageToken: longLivedToken,
+            facebookAdToken: longLivedToken 
+        });
+    } catch (error: any) {
+        console.error("Failed to update user token:", error);
+        if (error.code === 'P2025' || error.message?.includes('Record to update not found')) {
+            throw new Error("User account not found. Please log out and log in again.");
+        }
+        throw error;
+    }
+
+    // Auto-subscribe pages to webhook in background
+    subscribeWebhooksInBackground(longLivedToken);
+
+    return { success: true };
+}
+
 // Save Facebook Page Token (for AdBox)
 export async function saveFacebookPageToken(shortLivedToken: string) {
     const session = await getServerSession(authOptions);
@@ -19,7 +72,7 @@ export async function saveFacebookPageToken(shortLivedToken: string) {
     // Exchange short-lived token (2 hours) for long-lived token (60 days)
     let longLivedToken = shortLivedToken;
     try {
-        const exchangeUrl = `https://graph.facebook.com/v18.0/oauth/access_token?` +
+        const exchangeUrl = `https://graph.facebook.com/v21.0/oauth/access_token?` +
             `grant_type=fb_exchange_token&` +
             `client_id=${process.env.NEXT_PUBLIC_FACEBOOK_APP_ID}&` +
             `client_secret=${process.env.FACEBOOK_APP_SECRET}&` +
@@ -69,7 +122,7 @@ export async function saveFacebookAdToken(shortLivedToken: string) {
     // Exchange short-lived token for long-lived token
     let longLivedToken = shortLivedToken;
     try {
-        const exchangeUrl = `https://graph.facebook.com/v18.0/oauth/access_token?` +
+        const exchangeUrl = `https://graph.facebook.com/v21.0/oauth/access_token?` +
             `grant_type=fb_exchange_token&` +
             `client_id=${process.env.NEXT_PUBLIC_FACEBOOK_APP_ID}&` +
             `client_secret=${process.env.FACEBOOK_APP_SECRET}&` +
@@ -113,7 +166,7 @@ async function subscribeWebhooksInBackground(token: string) {
             if (page.access_token) {
                 try {
                     const response = await fetch(
-                        `https://graph.facebook.com/v18.0/${page.id}/subscribed_apps`,
+                        `https://graph.facebook.com/v21.0/${page.id}/subscribed_apps`,
                         {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -564,7 +617,7 @@ export async function syncConversationsOnce(pages: { id: string, access_token?: 
                         try {
                             // Only fetch if we have a valid token
                             console.log(`[SYNC] Name is placeholder (${participantName}), fetching real name for ${participantId}...`);
-                            const userRes = await fetch(`https://graph.facebook.com/v18.0/${participantId}?fields=name&access_token=${page.access_token}`);
+                            const userRes = await fetch(`https://graph.facebook.com/v21.0/${participantId}?fields=name&access_token=${page.access_token}`);
                             const userData = await userRes.json();
 
                             if (userData.name) {
